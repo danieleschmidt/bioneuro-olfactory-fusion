@@ -1,0 +1,197 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bioneuro-olfactory-fusion"
+version = "0.1.0"
+description = "Neuromorphic spiking neural network framework for multi-modal hazardous gas detection"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Daniel Schmidt", email = "daniel@terragonlabs.com"}
+]
+maintainers = [
+    {name = "Daniel Schmidt", email = "daniel@terragonlabs.com"}
+]
+keywords = [
+    "neuromorphic", "spiking-neural-networks", "gas-detection", 
+    "olfactory", "biosensor", "safety", "hazard-detection"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Monitoring",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.21.0",
+    "scipy>=1.7.0",
+    "torch>=1.12.0",
+    "torchaudio>=0.12.0",
+    "librosa>=0.9.0",
+    "matplotlib>=3.5.0",
+    "seaborn>=0.11.0",
+    "pandas>=1.3.0",
+    "scikit-learn>=1.0.0",
+    "pydantic>=1.8.0",
+    "click>=8.0.0",
+    "tqdm>=4.62.0",
+    "PyYAML>=6.0"
+]
+
+[project.optional-dependencies]
+neuromorphic = [
+    "nxsdk>=1.0.0",  # Intel Loihi
+    "spynnaker>=1.0.0",  # SpiNNaker
+    "brian2>=2.5.0"  # Spiking simulation
+]
+sensors = [
+    "pyserial>=3.5",
+    "smbus2>=0.4.0",
+    "RPi.GPIO>=0.7.0;platform_machine=='armv7l'"
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.8.0",
+    "black>=22.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=2.20.0",
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0"
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.8.0",
+    "pytest-xdist>=3.0.0"
+]
+
+[project.scripts]
+bioneuro-monitor = "bioneuro_olfactory.cli:monitor"
+bioneuro-train = "bioneuro_olfactory.cli:train"
+bioneuro-calibrate = "bioneuro_olfactory.cli:calibrate"
+
+[project.urls]
+Homepage = "https://github.com/terragonlabs/bioneuro-olfactory-fusion"
+Documentation = "https://bioneuro-olfactory-fusion.readthedocs.io/"
+Repository = "https://github.com/terragonlabs/bioneuro-olfactory-fusion.git"
+"Bug Tracker" = "https://github.com/terragonlabs/bioneuro-olfactory-fusion/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bioneuro_olfactory*"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "torch.*",
+    "torchaudio.*",
+    "librosa.*",
+    "matplotlib.*",
+    "seaborn.*",
+    "sklearn.*",
+    "nxsdk.*",
+    "spynnaker.*",
+    "brian2.*"
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "neuromorphic: marks tests requiring neuromorphic hardware"
+]
+
+[tool.coverage.run]
+branch = true
+source = ["bioneuro_olfactory"]
+omit = ["*/tests/*", "*/test_*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]
