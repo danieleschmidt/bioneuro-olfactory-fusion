@@ -118,15 +118,18 @@ dev-clean: clean ## Clean development environment
 	pip uninstall -y bioneuro-olfactory-fusion
 	rm -rf .venv/
 
-# Autonomous SDLC
+# Autonomous SDLC & Value Discovery
 run-agent: ## Run autonomous SDLC agent
 	python .terragon/autonomous_agent.py
 
-agent-discover: ## Run value discovery only
-	python -c "from .terragon.autonomous_agent import AutonomousSDLCAgent; from pathlib import Path; agent = AutonomousSDLCAgent(Path('.')); opps = agent.discover_value_opportunities(); print(f'Found {len(opps)} opportunities')"
+discover-value: ## Run autonomous value discovery
+	python .terragon/value-discovery.py
 
-update-backlog: ## Update value backlog
-	python .terragon/autonomous_agent.py --update-backlog-only
+update-backlog: discover-value ## Update value backlog with latest opportunities
+	@echo "Backlog updated with latest value opportunities"
+
+agent-discover: ## Run value discovery only (legacy)
+	python -c "from .terragon.autonomous_agent import AutonomousSDLCAgent; from pathlib import Path; agent = AutonomousSDLCAgent(Path('.')); opps = agent.discover_value_opportunities(); print(f'Found {len(opps)} opportunities')"
 
 # Performance
 profile: ## Run performance profiling

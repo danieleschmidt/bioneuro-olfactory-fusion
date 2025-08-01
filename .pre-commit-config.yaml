@@ -42,3 +42,17 @@ repos:
     rev: v1.3.2
     hooks:
       - id: python-safety-dependencies-check
+
+  - repo: https://github.com/gitguardian/ggshield
+    rev: v1.25.0
+    hooks:
+      - id: ggshield
+        language: python
+        stages: [commit]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [yaml, markdown, json]
+        exclude: ^(.*\.lock|CHANGELOG\.md)$

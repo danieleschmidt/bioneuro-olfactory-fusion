@@ -1,0 +1,68 @@
+monitoring:
+  performance:
+    profiling:
+      enabled: true
+      tools:
+        - cProfile
+        - py-spy
+        - memory_profiler
+      output_dir: "profiling_results"
+      
+    benchmarking:
+      enabled: true
+      framework: pytest-benchmark
+      baseline_dir: ".benchmarks"
+      compare_threshold: 0.1  # 10% performance regression threshold
+      
+    metrics:
+      collection_interval: 60  # seconds
+      storage: "metrics.json"
+      dimensions:
+        - inference_time
+        - memory_usage
+        - spike_rate
+        - energy_consumption
+        - accuracy
+        
+  observability:
+    logging:
+      level: INFO
+      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      handlers:
+        - console
+        - file
+        - structured_json
+        
+    tracing:
+      enabled: false  # Enable when APM tool is available
+      service_name: "bioneuro-olfactory"
+      
+    health_checks:
+      enabled: true
+      endpoints:
+        - "/health"
+        - "/health/ready"
+        - "/health/live"
+        - "/metrics"
+        
+  alerting:
+    thresholds:
+      memory_usage_mb: 1000
+      inference_time_ms: 100
+      error_rate_percent: 5
+      accuracy_drop_percent: 10
+      
+    channels:
+      - type: "log"
+        level: "WARNING"
+      - type: "webhook"  # Configure webhook URL in production
+        
+  dashboards:
+    grafana:
+      enabled: false  # Enable when Grafana is available
+      config_path: "grafana/dashboards/"
+      
+  data_collection:
+    anonymous_telemetry: true
+    crash_reporting: true
+    performance_telemetry: true
