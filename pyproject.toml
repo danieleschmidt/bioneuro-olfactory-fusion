@@ -65,12 +65,17 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.8.0",
+    "pytest-benchmark>=4.0.0",
+    "mutmut>=2.4.0",
     "black>=22.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=2.20.0",
     "sphinx>=5.0.0",
-    "sphinx-rtd-theme>=1.0.0"
+    "sphinx-rtd-theme>=1.0.0",
+    "cyclonedx-bom>=4.0.0",
+    "safety>=3.0.0",
+    "bandit[toml]>=1.7.0"
 ]
 test = [
     "pytest>=7.0.0",
@@ -83,6 +88,7 @@ test = [
 bioneuro-monitor = "bioneuro_olfactory.cli:monitor"
 bioneuro-train = "bioneuro_olfactory.cli:train"
 bioneuro-calibrate = "bioneuro_olfactory.cli:calibrate"
+bioneuro-sbom = "bioneuro_olfactory.cli:generate_sbom"
 
 [project.urls]
 Homepage = "https://github.com/terragonlabs/bioneuro-olfactory-fusion"
@@ -195,3 +201,10 @@ exclude_lines = [
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod"
 ]
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs", "examples"]
+skips = ["B101", "B601"]  # Skip assert and shell injection in tests
+
+[tool.bandit.assert_used]
+skips = ["**/test_*.py", "**/conftest.py"]

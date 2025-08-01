@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "danieleschmidt"
+    assignees:
+      - "danieleschmidt"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    groups:
+      pytorch:
+        patterns:
+          - "torch*"
+      testing:
+        patterns:
+          - "pytest*"
+          - "*test*"
+      dev-tools:
+        patterns:
+          - "black"
+          - "ruff"
+          - "mypy"
+          - "pre-commit"
+
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:30"
+    reviewers:
+      - "danieleschmidt"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/.github/workflows"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+    reviewers:
+      - "danieleschmidt"
