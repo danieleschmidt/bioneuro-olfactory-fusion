@@ -205,3 +205,83 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Machine Learning & AI specific
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.hdf5
+*.onnx
+*.pb
+*.pth
+*.pt
+*.bin
+*.safetensors
+models/
+checkpoints/
+wandb/
+mlruns/
+.mlflow/
+
+# Neuromorphic hardware specific  
+*.nxnet
+*.spinn
+*.brain
+loihi_logs/
+spinnaker_output/
+brainscales_data/
+
+# Sensor data and calibration
+*.csv
+*.tsv
+*.dat
+*.raw
+sensor_data/
+calibration_data/
+recordings/
+*.wav
+*.mp3
+*.flac
+
+# Scientific computing
+*.mat
+*.npz
+*.npy
+*.nc
+*.hdf
+
+# Temporary analysis files
+analysis_temp/
+scratch/
+experiments/temp/
+*.tmp
+*.temp
+
+# Security sensitive
+secrets/
+keys/
+certificates/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.env.local
+.env.production
+
+# Performance profiling
+*.prof
+*.cprof
+profile_output/
+benchmark_results/
+
+# Hardware interface logs
+hardware_logs/
+device_logs/
+*.log.*
+
+# Terragon specific (keep some files tracked)
+.terragon/logs/
+.terragon/cache/
+.terragon/temp/

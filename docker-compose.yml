@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  bioneuro:
+    build: .
+    container_name: bioneuro-monitor
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    ports:
+      - "8080:8080"  # Monitoring API
+    restart: unless-stopped
+    command: ["bioneuro-monitor", "--config", "/app/config/monitor.yaml"]
+    
+  # Mock sensor simulator for development
+  sensor-sim:
+    image: python:3.11-slim
+    container_name: sensor-simulator  
+    volumes:
+      - ./scripts:/scripts:ro
+    command: ["python", "/scripts/simulate_sensors.py"]
+    environment:
+      - SENSOR_COUNT=6
+      - SAMPLE_RATE=100
+    restart: unless-stopped
+    
+  # Time-series database for sensor data
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: bioneuro-influxdb
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=changeme123
+      - DOCKER_INFLUXDB_INIT_ORG=terragon
+      - DOCKER_INFLUXDB_INIT_BUCKET=sensors
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    ports:
+      - "8086:8086"
+    restart: unless-stopped
+    
+  # Monitoring dashboard
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: bioneuro-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+volumes:
+  influxdb_data:
+  grafana_data:
+
+networks:
+  default:
+    name: bioneuro-network
