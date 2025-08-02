@@ -1,7 +1,7 @@
 # Multi-stage Docker build for BioNeuro-Olfactory-Fusion
 
 # Build stage
-FROM python:3.11-slim as builder
+FROM python:3.13-slim as builder
 
 WORKDIR /build
 
@@ -21,7 +21,7 @@ RUN pip install build && \
     python -m build --wheel
 
 # Production stage
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Create non-root user
 RUN groupadd -r biouser && useradd -r -g biouser biouser
