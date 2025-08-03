@@ -1,214 +1,195 @@
 version: '3.8'
 
 services:
-  # =============================================================================
-  # Core Application Services
-  # =============================================================================
-  
-  # Main API server
-  api:
+  # Main API Service
+  bioneuro-api:
     build:
       context: .
-      dockerfile: Dockerfile.multi-stage
+      dockerfile: Dockerfile
       target: production
     container_name: bioneuro-api
     ports:
       - "8000:8000"
     environment:
-      - ENVIRONMENT=production
-      - DATABASE_TYPE=postgresql
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=bioneuro_olfactory
-      - POSTGRES_USER=bioneuro_user
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password_change_me}
-      - REDIS_URL=redis://redis:6379
-      - LOG_LEVEL=info
-      - API_SECRET_KEY=${API_SECRET_KEY:-your_secret_key_change_this}
+      - DATABASE_URL=postgresql://bioneuro:bioneuro_pass@postgres:5432/bioneuro_db
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=INFO
+      - PYTHONPATH=/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - api_data:/app/data
-      - api_logs:/app/logs
-      - api_models:/app/models
+      - ./logs:/app/logs
+      - sensor_data:/app/data
     networks:
       - bioneuro-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    restart: unless-stopped
-    
-  # Development API server (for development environment)
-  api-dev:
-    build:
-      context: .
-      dockerfile: Dockerfile.multi-stage
-      target: development
-    container_name: bioneuro-api-dev
-    ports:
-      - "8001:8000"
-      - "8888:8888"  # Jupyter Lab
-      - "6006:6006"  # TensorBoard
-    environment:
-      - ENVIRONMENT=development
-      - DATABASE_TYPE=sqlite
-      - SQLITE_PATH=/app/data/dev_bioneuro.db
-      - LOG_LEVEL=debug
-      - API_DEBUG=true
-    volumes:
-      - .:/app
-      - dev_data:/app/data
-      - jupyter_data:/home/appuser/.jupyter
-    networks:
-      - bioneuro-network
-    profiles:
-      - development
 
-  # =============================================================================
-  # Database Services
-  # =============================================================================
-  
-  # PostgreSQL primary database
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: bioneuro-postgres
     environment:
-      POSTGRES_DB: bioneuro_olfactory
-      POSTGRES_USER: bioneuro_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+      - POSTGRES_DB=bioneuro_db
+      - POSTGRES_USER=bioneuro
+      - POSTGRES_PASSWORD=bioneuro_pass
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./bioneuro_olfactory/data/database/migrations:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     networks:
       - bioneuro-network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bioneuro_user -d bioneuro_olfactory"]
+      test: ["CMD-SHELL", "pg_isready -U bioneuro -d bioneuro_db"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
-  # Redis for caching and real-time features
+  # Redis Cache & Session Store
   redis:
     image: redis:7-alpine
     container_name: bioneuro-redis
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password_change_me}
+    command: redis-server --appendonly yes --requirepass redis_pass
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     networks:
       - bioneuro-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
-    restart: unless-stopped
 
-  # =============================================================================
-  # Legacy Monitoring (Updated)
-  # =============================================================================
-  
-  # Time-series database for sensor data
-  influxdb:
-    image: influxdb:2.7-alpine
-    container_name: bioneuro-influxdb
-    environment:
-      - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=changeme123
-      - DOCKER_INFLUXDB_INIT_ORG=terragon
-      - DOCKER_INFLUXDB_INIT_BUCKET=sensors
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bioneuro-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
     volumes:
-      - influxdb_data:/var/lib/influxdb2
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
     ports:
-      - "8086:8086"
+      - "9090:9090"
     networks:
       - bioneuro-network
     restart: unless-stopped
-    
-  # Monitoring dashboard (Enhanced)
+
+  # Grafana Dashboard
   grafana:
-    image: grafana/grafana:10.2.0
+    image: grafana/grafana:latest
     container_name: bioneuro-grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin_password_change_me}
+      - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     ports:
       - "3000:3000"
+    networks:
+      - bioneuro-network
+    restart: unless-stopped
     depends_on:
-      - influxdb
+      - prometheus
+
+  # NGINX Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: bioneuro-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - bioneuro-api
     networks:
       - bioneuro-network
     restart: unless-stopped
 
-  # =============================================================================
-  # Simulation & Development
-  # =============================================================================
-  
-  # Enhanced sensor simulator
-  sensor-sim:
+  # Sensor Data Collector (Simulated)
+  sensor-collector:
     build:
       context: .
-      dockerfile: Dockerfile.multi-stage
-      target: development
-    container_name: bioneuro-sensor-sim
-    command: ["python", "-m", "bioneuro_olfactory.sensors.simulator"]
+      dockerfile: Dockerfile
+      target: production
+    container_name: bioneuro-sensor-collector
+    command: python -m bioneuro_olfactory.sensors.collector
     environment:
-      - SENSOR_COUNT=6
-      - SAMPLE_RATE=100
-      - SIMULATION_MODE=true
-      - API_HOST=api
-      - API_PORT=8000
+      - DATABASE_URL=postgresql://bioneuro:bioneuro_pass@postgres:5432/bioneuro_db
+      - SENSOR_ARRAY_CONFIG=/app/config/sensor_array.json
+      - COLLECTION_INTERVAL=5
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
-      - sensor_sim_data:/app/sim_data
+      - sensor_data:/app/data
+      - ./config:/app/config
     networks:
       - bioneuro-network
     restart: unless-stopped
-    profiles:
-      - simulation
 
-# =============================================================================
-# Network Configuration
-# =============================================================================
+  # Alert Manager Service
+  alert-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: bioneuro-alert-manager
+    command: python -m bioneuro_olfactory.integrations.notifications.alert_service
+    environment:
+      - DATABASE_URL=postgresql://bioneuro:bioneuro_pass@postgres:5432/bioneuro_db
+      - REDIS_URL=redis://redis:6379/0
+      - EMAIL_SMTP_HOST=smtp.gmail.com
+      - EMAIL_SMTP_PORT=587
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - ALERT_EMAIL_RECIPIENTS=${ALERT_EMAIL_RECIPIENTS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - bioneuro-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  sensor_data:
+    driver: local
+
 networks:
   bioneuro-network:
     driver: bridge
-
-# =============================================================================
-# Volume Configuration
-# =============================================================================
-volumes:
-  # Application data
-  api_data:
-  api_logs:
-  api_models:
-  dev_data:
-  
-  # Database volumes
-  postgres_data:
-  redis_data:
-  
-  # Legacy monitoring
-  influxdb_data:
-  grafana_data:
-  
-  # Development
-  jupyter_data:
-  
-  # Simulation
-  sensor_sim_data:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
