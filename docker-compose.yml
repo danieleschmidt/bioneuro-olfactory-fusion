@@ -1,33 +1,124 @@
 version: '3.8'
 
 services:
-  bioneuro:
-    build: .
-    container_name: bioneuro-monitor
-    environment:
-      - PYTHONPATH=/app
-      - LOG_LEVEL=INFO
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config:ro
+  # =============================================================================
+  # Core Application Services
+  # =============================================================================
+  
+  # Main API server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.multi-stage
+      target: production
+    container_name: bioneuro-api
     ports:
-      - "8080:8080"  # Monitoring API
-    restart: unless-stopped
-    command: ["bioneuro-monitor", "--config", "/app/config/monitor.yaml"]
-    
-  # Mock sensor simulator for development
-  sensor-sim:
-    image: python:3.11-slim
-    container_name: sensor-simulator  
-    volumes:
-      - ./scripts:/scripts:ro
-    command: ["python", "/scripts/simulate_sensors.py"]
+      - "8000:8000"
     environment:
-      - SENSOR_COUNT=6
-      - SAMPLE_RATE=100
+      - ENVIRONMENT=production
+      - DATABASE_TYPE=postgresql
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=bioneuro_olfactory
+      - POSTGRES_USER=bioneuro_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password_change_me}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
+      - API_SECRET_KEY=${API_SECRET_KEY:-your_secret_key_change_this}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - api_data:/app/data
+      - api_logs:/app/logs
+      - api_models:/app/models
+    networks:
+      - bioneuro-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     
+  # Development API server (for development environment)
+  api-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.multi-stage
+      target: development
+    container_name: bioneuro-api-dev
+    ports:
+      - "8001:8000"
+      - "8888:8888"  # Jupyter Lab
+      - "6006:6006"  # TensorBoard
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_TYPE=sqlite
+      - SQLITE_PATH=/app/data/dev_bioneuro.db
+      - LOG_LEVEL=debug
+      - API_DEBUG=true
+    volumes:
+      - .:/app
+      - dev_data:/app/data
+      - jupyter_data:/home/appuser/.jupyter
+    networks:
+      - bioneuro-network
+    profiles:
+      - development
+
+  # =============================================================================
+  # Database Services
+  # =============================================================================
+  
+  # PostgreSQL primary database
+  postgres:
+    image: postgres:15-alpine
+    container_name: bioneuro-postgres
+    environment:
+      POSTGRES_DB: bioneuro_olfactory
+      POSTGRES_USER: bioneuro_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - bioneuro-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bioneuro_user -d bioneuro_olfactory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for caching and real-time features
+  redis:
+    image: redis:7-alpine
+    container_name: bioneuro-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password_change_me}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - bioneuro-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # =============================================================================
+  # Legacy Monitoring (Updated)
+  # =============================================================================
+  
   # Time-series database for sensor data
   influxdb:
     image: influxdb:2.7-alpine
@@ -42,28 +133,82 @@ services:
       - influxdb_data:/var/lib/influxdb2
     ports:
       - "8086:8086"
+    networks:
+      - bioneuro-network
     restart: unless-stopped
     
-  # Monitoring dashboard
+  # Monitoring dashboard (Enhanced)
   grafana:
     image: grafana/grafana:10.2.0
     container_name: bioneuro-grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin_password_change_me}
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
     ports:
       - "3000:3000"
     depends_on:
       - influxdb
+    networks:
+      - bioneuro-network
     restart: unless-stopped
 
+  # =============================================================================
+  # Simulation & Development
+  # =============================================================================
+  
+  # Enhanced sensor simulator
+  sensor-sim:
+    build:
+      context: .
+      dockerfile: Dockerfile.multi-stage
+      target: development
+    container_name: bioneuro-sensor-sim
+    command: ["python", "-m", "bioneuro_olfactory.sensors.simulator"]
+    environment:
+      - SENSOR_COUNT=6
+      - SAMPLE_RATE=100
+      - SIMULATION_MODE=true
+      - API_HOST=api
+      - API_PORT=8000
+    volumes:
+      - sensor_sim_data:/app/sim_data
+    networks:
+      - bioneuro-network
+    restart: unless-stopped
+    profiles:
+      - simulation
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+networks:
+  bioneuro-network:
+    driver: bridge
+
+# =============================================================================
+# Volume Configuration
+# =============================================================================
 volumes:
+  # Application data
+  api_data:
+  api_logs:
+  api_models:
+  dev_data:
+  
+  # Database volumes
+  postgres_data:
+  redis_data:
+  
+  # Legacy monitoring
   influxdb_data:
   grafana_data:
-
-networks:
-  default:
-    name: bioneuro-network
+  
+  # Development
+  jupyter_data:
+  
+  # Simulation
+  sensor_sim_data:

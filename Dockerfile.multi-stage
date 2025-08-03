@@ -1,0 +1,240 @@
+# Multi-stage Dockerfile for BioNeuro-Olfactory-Fusion
+# Optimized for production deployment with security best practices
+
+# =============================================================================
+# Stage 1: Base Python Environment
+# =============================================================================
+FROM python:3.11-slim as python-base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH="/app" \
+    USER_ID=1000 \
+    GROUP_ID=1000
+
+# Install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        pkg-config \
+        libgraphviz-dev \
+        graphviz \
+        libffi-dev \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+RUN groupadd -g $GROUP_ID appuser \
+    && useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash appuser
+
+# =============================================================================
+# Stage 2: Dependencies
+# =============================================================================
+FROM python-base as dependencies
+
+# Copy dependency files
+COPY pyproject.toml /app/
+COPY requirements.txt /app/ 2>/dev/null || echo "# No requirements.txt" > /app/requirements.txt
+
+WORKDIR /app
+
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install -e .[dev] \
+    && pip cache purge
+
+# =============================================================================
+# Stage 3: Development Environment
+# =============================================================================
+FROM dependencies as development
+
+# Install additional development tools
+RUN pip install \
+        jupyterlab \
+        tensorboard \
+        plotly \
+        ipywidgets \
+        debugpy \
+    && pip cache purge
+
+# Copy source code
+COPY --chown=appuser:appuser . /app/
+
+# Switch to non-root user
+USER appuser
+
+# Expose ports
+EXPOSE 8000 8888 6006
+
+# Development command
+CMD ["python", "-m", "bioneuro_olfactory.api.server"]
+
+# =============================================================================
+# Stage 4: Testing Environment
+# =============================================================================
+FROM dependencies as testing
+
+# Copy source code and tests
+COPY --chown=appuser:appuser . /app/
+
+# Switch to non-root user
+USER appuser
+
+# Run tests
+CMD ["python", "-m", "pytest", "tests/", "-v", "--cov=bioneuro_olfactory", "--cov-report=xml"]
+
+# =============================================================================
+# Stage 5: Production Build
+# =============================================================================
+FROM python-base as production-build
+
+# Copy dependency files
+COPY pyproject.toml /app/
+WORKDIR /app
+
+# Install only production dependencies
+RUN pip install --upgrade pip \
+    && pip install -e . \
+    && pip cache purge
+
+# Copy source code (exclude tests and dev files)
+COPY bioneuro_olfactory/ /app/bioneuro_olfactory/
+COPY scripts/ /app/scripts/
+COPY docs/ /app/docs/
+COPY *.md /app/
+COPY LICENSE /app/
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/logs /app/models \
+    && chown -R appuser:appuser /app
+
+# =============================================================================
+# Stage 6: Production Runtime
+# =============================================================================
+FROM python:3.11-slim as production
+
+# Security updates and minimal runtime dependencies
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        libgraphviz-dev \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+ENV USER_ID=1000 \
+    GROUP_ID=1000
+RUN groupadd -g $GROUP_ID appuser \
+    && useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash appuser
+
+# Copy from production build
+COPY --from=production-build --chown=appuser:appuser /app /app
+COPY --from=production-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=production-build /usr/local/bin /usr/local/bin
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH="/app" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ENVIRONMENT="production"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Production command
+CMD ["python", "-m", "bioneuro_olfactory.api.server", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+
+# =============================================================================
+# Stage 7: Neuromorphic Hardware Support
+# =============================================================================
+FROM production as neuromorphic
+
+# Switch back to root for hardware-specific installations
+USER root
+
+# Install neuromorphic hardware dependencies (if available)
+# This would include Intel Loihi SDK, SpiNNaker tools, etc.
+RUN echo "Installing neuromorphic hardware support..." \
+    && mkdir -p /opt/neuromorphic
+
+# Intel Loihi support (placeholder - requires actual NXSDK)
+RUN echo "# Intel Loihi support would be installed here" > /opt/neuromorphic/loihi_info.txt
+
+# SpiNNaker support (placeholder - requires actual SpiNNaker tools)
+RUN echo "# SpiNNaker support would be installed here" > /opt/neuromorphic/spinnaker_info.txt
+
+# BrainScaleS support (placeholder)
+RUN echo "# BrainScaleS support would be installed here" > /opt/neuromorphic/brainscales_info.txt
+
+# Set neuromorphic environment variables
+ENV NXSDK_PATH="/opt/neuromorphic/nxsdk" \
+    SPINNAKER_CONFIG_PATH="/opt/neuromorphic/spinnaker" \
+    NEUROMORPHIC_ENABLED="true"
+
+# Switch back to app user
+USER appuser
+
+# Neuromorphic-optimized command
+CMD ["python", "-m", "bioneuro_olfactory.api.server", "--neuromorphic"]
+
+# =============================================================================
+# Stage 8: Edge Deployment
+# =============================================================================
+FROM python:3.11-alpine as edge
+
+# Minimal Alpine-based image for edge devices
+RUN apk add --no-cache \
+        gcc \
+        musl-dev \
+        libffi-dev \
+        openssl-dev \
+        curl
+
+# Create user
+RUN addgroup -g 1000 appuser \
+    && adduser -u 1000 -G appuser -s /bin/sh -D appuser
+
+# Copy minimal dependencies
+COPY --from=production-build --chown=appuser:appuser /app/bioneuro_olfactory /app/bioneuro_olfactory
+COPY --from=production-build --chown=appuser:appuser /app/pyproject.toml /app/
+
+WORKDIR /app
+
+# Install minimal dependencies
+RUN pip install --no-cache-dir -e . \
+    && rm -rf /root/.cache
+
+# Environment for edge deployment
+ENV PYTHONPATH="/app" \
+    PYTHONUNBUFFERED=1 \
+    ENVIRONMENT="edge" \
+    EDGE_MODE="true"
+
+USER appuser
+
+# Edge-optimized health check
+HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=2 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+
+# Edge deployment command with resource constraints
+CMD ["python", "-m", "bioneuro_olfactory.api.server", "--workers", "1", "--edge-mode"]
