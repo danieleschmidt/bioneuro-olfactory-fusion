@@ -4,8 +4,20 @@ Monitoring and observability module for BioNeuro-Olfactory-Fusion.
 Provides performance monitoring, health checks, and metrics collection.
 """
 
-from .metrics import MetricsCollector, PerformanceMonitor
-from .health import HealthChecker
-from .profiler import SystemProfiler
+from .metrics_collector import (
+    MetricsCollector,
+    PerformanceProfiler,
+    NeuromorphicMetrics,
+    SystemHealthMetrics,
+    metrics_collector,
+    performance_profiler
+)
 
-__all__ = ["MetricsCollector", "PerformanceMonitor", "HealthChecker", "SystemProfiler"]
+__all__ = [
+    "MetricsCollector", 
+    "PerformanceProfiler", 
+    "NeuromorphicMetrics",
+    "SystemHealthMetrics",
+    "metrics_collector",
+    "performance_profiler"
+]
