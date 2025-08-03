@@ -1,0 +1,80 @@
+{
+    "name": "BioNeuro-Olfactory-Fusion Development",
+    "image": "mcr.microsoft.com/devcontainers/python:3.11",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "18"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.black-formatter",
+                "ms-python.pylint",
+                "ms-python.mypy-type-checker",
+                "charliermarsh.ruff",
+                "ms-toolsai.jupyter",
+                "redhat.vscode-yaml",
+                "ms-vscode.vscode-json",
+                "ms-azuretools.vscode-docker",
+                "GitHub.copilot",
+                "GitHub.copilot-chat",
+                "eamodio.gitlens",
+                "ms-vscode.test-adapter-converter",
+                "ms-python.pytest",
+                "tamasfe.even-better-toml"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.linting.enabled": true,
+                "python.linting.pylintEnabled": false,
+                "python.linting.ruffEnabled": true,
+                "python.formatting.provider": "black",
+                "python.analysis.typeCheckingMode": "strict",
+                "python.testing.pytestEnabled": true,
+                "python.testing.unittestEnabled": false,
+                "python.testing.pytestArgs": [
+                    "tests"
+                ],
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.organizeImports": true
+                },
+                "files.exclude": {
+                    "**/__pycache__": true,
+                    "**/*.pyc": true,
+                    "**/.pytest_cache": true,
+                    "**/.mypy_cache": true,
+                    "**/.coverage": true,
+                    "**/htmlcov": true
+                }
+            }
+        }
+    },
+    "forwardPorts": [8888, 6006, 8000],
+    "portsAttributes": {
+        "8888": {
+            "label": "Jupyter Lab",
+            "onAutoForward": "openPreview"
+        },
+        "6006": {
+            "label": "TensorBoard",
+            "onAutoForward": "openPreview"
+        },
+        "8000": {
+            "label": "Development Server",
+            "onAutoForward": "openPreview"
+        }
+    },
+    "postCreateCommand": "bash .devcontainer/post-create.sh",
+    "remoteUser": "vscode",
+    "mounts": [
+        "source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind"
+    ],
+    "workspaceFolder": "/workspaces/bioneuro-olfactory-fusion",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/bioneuro-olfactory-fusion,type=bind"
+}
