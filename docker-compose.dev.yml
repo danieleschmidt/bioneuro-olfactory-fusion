@@ -1,0 +1,189 @@
+version: '3.8'
+
+services:
+  # Development API Service
+  bioneuro-api-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: bioneuro-api-dev
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # Debug port
+    environment:
+      - DATABASE_URL=postgresql://bioneuro:bioneuro_pass@postgres-dev:5432/bioneuro_dev_db
+      - REDIS_URL=redis://redis-dev:6379/0
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
+      - ENVIRONMENT=development
+      - DEBUG=true
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+      redis-dev:
+        condition: service_healthy
+    volumes:
+      - .:/app  # Mount source code for hot reload
+      - ./logs:/app/logs
+      - dev_sensor_data:/app/data
+    networks:
+      - bioneuro-dev-network
+    restart: unless-stopped
+    command: uvicorn bioneuro_olfactory.api.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
+
+  # Development PostgreSQL Database
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: bioneuro-postgres-dev
+    environment:
+      - POSTGRES_DB=bioneuro_dev_db
+      - POSTGRES_USER=bioneuro
+      - POSTGRES_PASSWORD=bioneuro_pass
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./bioneuro_olfactory/data/database/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    networks:
+      - bioneuro-dev-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bioneuro -d bioneuro_dev_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Development Redis
+  redis-dev:
+    image: redis:7-alpine
+    container_name: bioneuro-redis-dev
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_dev_data:/data
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    networks:
+      - bioneuro-dev-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Jupyter Lab for Development
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: bioneuro-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - DATABASE_URL=postgresql://bioneuro:bioneuro_pass@postgres-dev:5432/bioneuro_dev_db
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=bioneuro-token
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ./notebooks:/app/notebooks
+      - dev_sensor_data:/app/data
+    networks:
+      - bioneuro-dev-network
+    restart: unless-stopped
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/app
+
+  # pgAdmin for Database Management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: bioneuro-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@bioneuro.dev
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - bioneuro-dev-network
+    restart: unless-stopped
+    depends_on:
+      - postgres-dev
+
+  # Redis Commander for Redis Management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: bioneuro-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis-dev:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - bioneuro-dev-network
+    restart: unless-stopped
+    depends_on:
+      - redis-dev
+
+  # Development Test Runner
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: bioneuro-test-runner
+    environment:
+      - DATABASE_URL=postgresql://bioneuro:bioneuro_pass@postgres-dev:5432/bioneuro_test_db
+      - PYTHONPATH=/app
+      - ENVIRONMENT=test
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ./test-results:/app/test-results
+    networks:
+      - bioneuro-dev-network
+    profiles:
+      - testing
+    command: python -m pytest tests/ -v --cov=bioneuro_olfactory --cov-report=html:/app/test-results/coverage
+
+  # Documentation Server
+  docs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: bioneuro-docs
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - ./docs:/app/docs
+    networks:
+      - bioneuro-dev-network
+    restart: unless-stopped
+    profiles:
+      - docs
+    command: mkdocs serve --dev-addr=0.0.0.0:8080
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  dev_sensor_data:
+    driver: local
+
+networks:
+  bioneuro-dev-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

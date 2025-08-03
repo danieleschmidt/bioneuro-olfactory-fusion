@@ -1,0 +1,84 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'bioneuro-monitor'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # BioNeuro API
+  - job_name: 'bioneuro-api'
+    static_configs:
+      - targets: ['bioneuro-api:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 5s
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Node Exporter (system metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 10s
+
+  # Docker containers
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 10s
+
+  # Alert Manager
+  - job_name: 'alert-manager-service'
+    static_configs:
+      - targets: ['alert-manager:8001']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Sensor Collector
+  - job_name: 'sensor-collector'
+    static_configs:
+      - targets: ['sensor-collector:8002']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Custom neuromorphic metrics
+  - job_name: 'neuromorphic-metrics'
+    static_configs:
+      - targets: ['bioneuro-api:8000']
+    metrics_path: '/api/v1/metrics/neuromorphic'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Gas detection metrics
+  - job_name: 'detection-metrics'
+    static_configs:
+      - targets: ['bioneuro-api:8000']
+    metrics_path: '/api/v1/metrics/detection'
+    scrape_interval: 10s
+    scrape_timeout: 5s

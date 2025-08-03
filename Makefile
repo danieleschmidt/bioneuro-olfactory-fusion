@@ -1,209 +1,302 @@
-# Makefile for BioNeuro-Olfactory-Fusion
+# BioNeuro-Olfactory-Fusion Makefile
+# Comprehensive build and development automation
 
-.PHONY: help install install-dev test test-cov lint format type-check security clean build docs docker run-agent
+# Configuration
+PROJECT_NAME := bioneuro-olfactory-fusion
+PYTHON_VERSION := 3.11
+DOCKER_REGISTRY := your-registry.com
+IMAGE_TAG := latest
+COMPOSE_FILE := docker-compose.yml
+DEV_COMPOSE_FILE := docker-compose.dev.yml
 
-# Default target
+# Colors for output
+RED := \033[31m
+GREEN := \033[32m
+YELLOW := \033[33m
+BLUE := \033[34m
+MAGENTA := \033[35m
+CYAN := \033[36m
+WHITE := \033[37m
+RESET := \033[0m
+
+# Help target
+.PHONY: help
 help: ## Show this help message
-	@echo "BioNeuro-Olfactory-Fusion Development Commands"
-	@echo "=============================================="
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo "$(CYAN)BioNeuro-Olfactory-Fusion Build System$(RESET)"
+	@echo "$(YELLOW)Available commands:$(RESET)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
 
-# Installation
-install: ## Install package for production
+# Environment Setup
+.PHONY: install
+install: ## Install project dependencies
+	@echo "$(BLUE)Installing project dependencies...$(RESET)"
 	pip install -e .
+	pip install -r requirements-dev.txt
+	@echo "$(GREEN)Dependencies installed successfully!$(RESET)"
 
-install-dev: ## Install package with development dependencies
-	pip install -e ".[dev,test,sensors]"
+.PHONY: install-dev
+install-dev: ## Install development dependencies
+	@echo "$(BLUE)Installing development dependencies...$(RESET)"
+	pip install -e ".[dev]"
+	pip install -r requirements-dev.txt
 	pre-commit install
+	@echo "$(GREEN)Development environment ready!$(RESET)"
 
-install-neuromorphic: ## Install with neuromorphic hardware support
-	pip install -e ".[neuromorphic,sensors]"
-
-# Testing
-test: ## Run tests
-	pytest tests/ -v
-
-test-cov: ## Run tests with coverage
-	pytest tests/ --cov=bioneuro_olfactory --cov-report=html --cov-report=term-missing
-
-test-fast: ## Run tests excluding slow ones
-	pytest tests/ -v -m "not slow"
-
-test-integration: ## Run integration tests only
-	pytest tests/integration/ -v
-
-test-e2e: ## Run end-to-end tests
-	pytest tests/e2e/ -v -m "not neuromorphic"
-
-test-neuromorphic: ## Run neuromorphic hardware tests (requires hardware)
-	pytest tests/ -v -m "neuromorphic"
+.PHONY: setup-env
+setup-env: ## Setup environment variables and configuration
+	@echo "$(BLUE)Setting up environment...$(RESET)"
+	@if [ ! -f .env ]; then \
+		cp .env.example .env; \
+		echo "$(YELLOW)Created .env file from template. Please configure it.$(RESET)"; \
+	fi
+	@echo "$(GREEN)Environment setup complete!$(RESET)"
 
 # Code Quality
-lint: ## Run linting checks
-	ruff check bioneuro_olfactory/ tests/
-	black --check bioneuro_olfactory/ tests/
-
-format: ## Format code
+.PHONY: format
+format: ## Format code with black and isort
+	@echo "$(BLUE)Formatting code...$(RESET)"
 	black bioneuro_olfactory/ tests/
-	ruff check --fix bioneuro_olfactory/ tests/
+	isort bioneuro_olfactory/ tests/
+	@echo "$(GREEN)Code formatted successfully!$(RESET)"
 
-type-check: ## Run type checking
+.PHONY: lint
+lint: ## Run linting checks
+	@echo "$(BLUE)Running linting checks...$(RESET)"
+	flake8 bioneuro_olfactory/ tests/
+	pylint bioneuro_olfactory/
 	mypy bioneuro_olfactory/
+	@echo "$(GREEN)Linting completed!$(RESET)"
 
-# Security
-security: ## Run security checks
-	bandit -r bioneuro_olfactory/
+.PHONY: security-check
+security-check: ## Run security checks
+	@echo "$(BLUE)Running security checks...$(RESET)"
+	bandit -r bioneuro_olfactory/ -ll
 	safety check
+	@echo "$(GREEN)Security checks passed!$(RESET)"
 
-security-full: ## Run comprehensive security analysis
-	bandit -r bioneuro_olfactory/ -f json -o security-report.json
-	safety check --json --output safety-report.json
-	semgrep --config=auto bioneuro_olfactory/ || true
-
-# Quality gates (CI/CD)
-quality-gate: lint type-check security test ## Run all quality checks
-
+.PHONY: pre-commit
 pre-commit: ## Run pre-commit hooks
+	@echo "$(BLUE)Running pre-commit hooks...$(RESET)"
 	pre-commit run --all-files
+	@echo "$(GREEN)Pre-commit checks completed!$(RESET)"
 
-# Build and Release
-clean: ## Clean build artifacts
-	rm -rf build/ dist/ *.egg-info/
-	rm -rf htmlcov/ .coverage .pytest_cache/
-	rm -rf .mypy_cache/ .ruff_cache/
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
+# Testing
+.PHONY: test
+test: ## Run all tests
+	@echo "$(BLUE)Running tests...$(RESET)"
+	python -m pytest tests/ -v --cov=bioneuro_olfactory --cov-report=term-missing --cov-report=html
+	@echo "$(GREEN)Tests completed!$(RESET)"
 
-build: clean ## Build package
-	python -m build
+.PHONY: test-unit
+test-unit: ## Run unit tests only
+	@echo "$(BLUE)Running unit tests...$(RESET)"
+	python -m pytest tests/unit/ -v
+	@echo "$(GREEN)Unit tests completed!$(RESET)"
 
-build-wheel: ## Build wheel only
-	python -m build --wheel
+.PHONY: test-integration
+test-integration: ## Run integration tests only
+	@echo "$(BLUE)Running integration tests...$(RESET)"
+	python -m pytest tests/integration/ -v
+	@echo "$(GREEN)Integration tests completed!$(RESET)"
 
-upload-test: build ## Upload to test PyPI
-	twine upload --repository testpypi dist/*
+.PHONY: test-performance
+test-performance: ## Run performance tests
+	@echo "$(BLUE)Running performance tests...$(RESET)"
+	python -m pytest tests/performance/ -v --benchmark-only
+	@echo "$(GREEN)Performance tests completed!$(RESET)"
 
-upload: build ## Upload to PyPI
-	twine upload dist/*
+.PHONY: test-watch
+test-watch: ## Run tests in watch mode
+	@echo "$(BLUE)Starting test watcher...$(RESET)"
+	python -m pytest tests/ --watch
 
-# Documentation
-docs: ## Build documentation
-	cd docs && make html
+# Database Operations
+.PHONY: db-migrate
+db-migrate: ## Run database migrations
+	@echo "$(BLUE)Running database migrations...$(RESET)"
+	python -m bioneuro_olfactory.data.database.migrate
+	@echo "$(GREEN)Database migrations completed!$(RESET)"
 
-docs-serve: ## Serve documentation locally
-	cd docs/_build/html && python -m http.server 8000
+.PHONY: db-seed
+db-seed: ## Seed database with test data
+	@echo "$(BLUE)Seeding database...$(RESET)"
+	python -m bioneuro_olfactory.data.database.seed
+	@echo "$(GREEN)Database seeded!$(RESET)"
 
-docs-clean: ## Clean documentation build
-	cd docs && make clean
+.PHONY: db-reset
+db-reset: ## Reset database (WARNING: Destroys all data)
+	@echo "$(RED)WARNING: This will destroy all database data!$(RESET)"
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ]
+	python -m bioneuro_olfactory.data.database.reset
+	@echo "$(GREEN)Database reset completed!$(RESET)"
 
-# Docker
-docker-build: ## Build Docker image
-	docker build -t bioneuro-olfactory-fusion:latest .
+# Docker Operations
+.PHONY: docker-build
+docker-build: ## Build Docker images
+	@echo "$(BLUE)Building Docker images...$(RESET)"
+	docker build -t $(PROJECT_NAME):$(IMAGE_TAG) .
+	docker build -t $(PROJECT_NAME):dev --target development .
+	@echo "$(GREEN)Docker images built successfully!$(RESET)"
 
-docker-run: ## Run Docker container
-	docker run -it --rm bioneuro-olfactory-fusion:latest
+.PHONY: docker-push
+docker-push: docker-build ## Push Docker images to registry
+	@echo "$(BLUE)Pushing Docker images...$(RESET)"
+	docker tag $(PROJECT_NAME):$(IMAGE_TAG) $(DOCKER_REGISTRY)/$(PROJECT_NAME):$(IMAGE_TAG)
+	docker push $(DOCKER_REGISTRY)/$(PROJECT_NAME):$(IMAGE_TAG)
+	@echo "$(GREEN)Docker images pushed!$(RESET)"
 
-docker-compose-up: ## Start all services with docker-compose
-	docker-compose up -d
+.PHONY: up
+up: ## Start production services
+	@echo "$(BLUE)Starting production services...$(RESET)"
+	docker-compose -f $(COMPOSE_FILE) up -d
+	@echo "$(GREEN)Production services started!$(RESET)"
 
-docker-compose-down: ## Stop all services
-	docker-compose down
+.PHONY: up-dev
+up-dev: ## Start development services
+	@echo "$(BLUE)Starting development services...$(RESET)"
+	docker-compose -f $(DEV_COMPOSE_FILE) up -d
+	@echo "$(GREEN)Development services started!$(RESET)"
 
-# Development
-dev-setup: install-dev ## Set up development environment
-	@echo "Development environment ready!"
-	@echo "Run 'make test' to verify installation"
+.PHONY: down
+down: ## Stop all services
+	@echo "$(BLUE)Stopping services...$(RESET)"
+	docker-compose -f $(COMPOSE_FILE) down
+	docker-compose -f $(DEV_COMPOSE_FILE) down
+	@echo "$(GREEN)Services stopped!$(RESET)"
 
-dev-clean: clean ## Clean development environment
-	pip uninstall -y bioneuro-olfactory-fusion
-	rm -rf .venv/
+.PHONY: logs
+logs: ## Show service logs
+	docker-compose -f $(COMPOSE_FILE) logs -f
 
-# Autonomous SDLC & Value Discovery
-run-agent: ## Run autonomous SDLC agent
-	python .terragon/autonomous_agent.py
+.PHONY: logs-dev
+logs-dev: ## Show development service logs
+	docker-compose -f $(DEV_COMPOSE_FILE) logs -f
 
-discover-value: ## Run autonomous value discovery
-	python .terragon/value-discovery.py
+# Development Tools
+.PHONY: jupyter
+jupyter: ## Start Jupyter Lab
+	@echo "$(BLUE)Starting Jupyter Lab...$(RESET)"
+	docker-compose -f $(DEV_COMPOSE_FILE) up -d jupyter
+	@echo "$(GREEN)Jupyter Lab available at http://localhost:8888$(RESET)"
 
-update-backlog: discover-value ## Update value backlog with latest opportunities
-	@echo "Backlog updated with latest value opportunities"
+.PHONY: docs
+docs: ## Build and serve documentation
+	@echo "$(BLUE)Building documentation...$(RESET)"
+	mkdocs build
+	mkdocs serve --dev-addr=127.0.0.1:8080
+	@echo "$(GREEN)Documentation available at http://localhost:8080$(RESET)"
 
-agent-discover: ## Run value discovery only (legacy)
-	python -c "from .terragon.autonomous_agent import AutonomousSDLCAgent; from pathlib import Path; agent = AutonomousSDLCAgent(Path('.')); opps = agent.discover_value_opportunities(); print(f'Found {len(opps)} opportunities')"
+.PHONY: docs-build
+docs-build: ## Build documentation for deployment
+	@echo "$(BLUE)Building documentation for deployment...$(RESET)"
+	mkdocs build --clean
+	@echo "$(GREEN)Documentation built in site/ directory!$(RESET)"
 
-# Performance
+# Monitoring and Debugging
+.PHONY: monitor
+monitor: ## Start monitoring stack
+	@echo "$(BLUE)Starting monitoring services...$(RESET)"
+	docker-compose -f $(COMPOSE_FILE) up -d prometheus grafana
+	@echo "$(GREEN)Monitoring available:$(RESET)"
+	@echo "  $(CYAN)Prometheus:$(RESET) http://localhost:9090"
+	@echo "  $(CYAN)Grafana:$(RESET) http://localhost:3000 (admin/admin)"
+
+.PHONY: profile
 profile: ## Run performance profiling
-	python -m cProfile -o profile.stats examples/profile_model.py
+	@echo "$(BLUE)Running performance profiling...$(RESET)"
+	python -m cProfile -o profile.stats -m bioneuro_olfactory.models.fusion.multimodal_fusion
 	python -c "import pstats; p = pstats.Stats('profile.stats'); p.sort_stats('cumulative').print_stats(20)"
+	@echo "$(GREEN)Profiling completed!$(RESET)"
 
-benchmark: ## Run benchmarks
-	python -m pytest benchmarks/ -v --benchmark-only
+# Deployment
+.PHONY: deploy-staging
+deploy-staging: docker-build docker-push ## Deploy to staging environment
+	@echo "$(BLUE)Deploying to staging...$(RESET)"
+	# Add your staging deployment commands here
+	@echo "$(GREEN)Deployed to staging!$(RESET)"
 
-# Hardware Testing (requires hardware)
-test-loihi: ## Test Loihi deployment
-	pytest tests/ -v -m "neuromorphic" -k "loihi"
-
-test-spinnaker: ## Test SpiNNaker deployment  
-	pytest tests/ -v -m "neuromorphic" -k "spinnaker"
-
-calibrate-sensors: ## Run sensor calibration
-	bioneuro-calibrate --sensors all --reference clean_air --duration 300
-
-# Monitoring
-monitor: ## Start monitoring system
-	bioneuro-monitor --config config/monitor.yaml
-
-simulate-sensors: ## Run sensor simulation for testing
-	python scripts/simulate_sensors.py --count 6 --rate 100
-
-# Data Management
-clean-data: ## Clean temporary data files
-	rm -rf sensor_data/temp/ calibration_data/temp/
-	rm -rf experiments/temp/ analysis_temp/
-
-backup-data: ## Backup important data
-	tar -czf backup_$(shell date +%Y%m%d_%H%M%S).tar.gz sensor_data/ calibration_data/ config/
-
-# Continuous Integration helpers
-ci-install: ## Install for CI environment
-	pip install -e ".[dev,test]"
-
-ci-test: ## Run CI tests
-	pytest tests/ --cov=bioneuro_olfactory --cov-report=xml --junit-xml=test-results.xml
-
-ci-security: ## Run CI security checks
-	bandit -r bioneuro_olfactory/ -f xml -o bandit-report.xml
-	safety check --json --output safety-report.json
-
-# Version management
-version: ## Show current version
-	python -c "import bioneuro_olfactory; print(bioneuro_olfactory.__version__)"
-
-version-bump-patch: ## Bump patch version
-	bumpversion patch
-
-version-bump-minor: ## Bump minor version  
-	bumpversion minor
-
-version-bump-major: ## Bump major version
-	bumpversion major
-
-# Advanced features
-mutation-test: ## Run mutation testing
-	mutmut run --paths-to-mutate bioneuro_olfactory/
-
-complexity: ## Analyze code complexity
-	radon cc bioneuro_olfactory/ -a
-	radon mi bioneuro_olfactory/
-
-dependency-graph: ## Generate dependency graph
-	pydeps bioneuro_olfactory --show-deps --max-bacon 3 -o dependency-graph.svg
+.PHONY: deploy-prod
+deploy-prod: test docker-build docker-push ## Deploy to production environment
+	@echo "$(BLUE)Deploying to production...$(RESET)"
+	@echo "$(RED)WARNING: Deploying to production!$(RESET)"
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ]
+	# Add your production deployment commands here
+	@echo "$(GREEN)Deployed to production!$(RESET)"
 
 # Maintenance
-update-deps: ## Update dependencies
-	pip-compile --upgrade pyproject.toml
-	pip-sync
+.PHONY: clean
+clean: ## Clean up temporary files and caches
+	@echo "$(BLUE)Cleaning up...$(RESET)"
+	find . -type f -name "*.pyc" -delete
+	find . -type d -name "__pycache__" -delete
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf .pytest_cache/
+	rm -rf .coverage
+	rm -rf htmlcov/
+	rm -rf dist/
+	rm -rf build/
+	@echo "$(GREEN)Cleanup completed!$(RESET)"
 
-check-deps: ## Check for dependency issues
-	pip check
-	safety check
+.PHONY: clean-docker
+clean-docker: ## Clean up Docker resources
+	@echo "$(BLUE)Cleaning Docker resources...$(RESET)"
+	docker system prune -f
+	docker volume prune -f
+	@echo "$(GREEN)Docker cleanup completed!$(RESET)"
+
+.PHONY: reset-all
+reset-all: clean clean-docker ## Reset everything (clean + Docker cleanup)
+	@echo "$(BLUE)Resetting all environments...$(RESET)"
+	docker-compose -f $(COMPOSE_FILE) down -v
+	docker-compose -f $(DEV_COMPOSE_FILE) down -v
+	@echo "$(GREEN)Full reset completed!$(RESET)"
+
+# Release Management
+.PHONY: version
+version: ## Show current version
+	@python -c "import bioneuro_olfactory; print(f'Version: {bioneuro_olfactory.__version__}')"
+
+.PHONY: release-patch
+release-patch: ## Create patch release
+	@echo "$(BLUE)Creating patch release...$(RESET)"
+	semantic-release version --patch
+	@echo "$(GREEN)Patch release created!$(RESET)"
+
+.PHONY: release-minor
+release-minor: ## Create minor release
+	@echo "$(BLUE)Creating minor release...$(RESET)"
+	semantic-release version --minor
+	@echo "$(GREEN)Minor release created!$(RESET)"
+
+.PHONY: release-major
+release-major: ## Create major release
+	@echo "$(BLUE)Creating major release...$(RESET)"
+	semantic-release version --major
+	@echo "$(GREEN)Major release created!$(RESET)"
+
+# Comprehensive Quality Check
+.PHONY: check-all
+check-all: format lint security-check test ## Run all quality checks
+	@echo "$(GREEN)All quality checks passed!$(RESET)"
+
+# Development Workflow
+.PHONY: dev-setup
+dev-setup: setup-env install-dev ## Complete development setup
+	@echo "$(GREEN)Development environment fully configured!$(RESET)"
+
+.PHONY: dev-start
+dev-start: up-dev ## Start development environment
+	@echo "$(GREEN)Development environment started!$(RESET)"
+	@echo "$(CYAN)Available services:$(RESET)"
+	@echo "  $(WHITE)API:$(RESET) http://localhost:8000"
+	@echo "  $(WHITE)Jupyter:$(RESET) http://localhost:8888"
+	@echo "  $(WHITE)pgAdmin:$(RESET) http://localhost:5050"
+	@echo "  $(WHITE)Redis Commander:$(RESET) http://localhost:8081"
+
+.PHONY: dev-stop
+dev-stop: ## Stop development environment
+	docker-compose -f $(DEV_COMPOSE_FILE) down
+	@echo "$(GREEN)Development environment stopped!$(RESET)"
+
+# Default target
+.DEFAULT_GOAL := help
