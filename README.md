@@ -429,9 +429,9 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ```bibtex
 @software{bioneuro_olfactory_fusion,
   title={BioNeuro-Olfactory-Fusion: Neuromorphic Multi-Modal Gas Detection},
-  author={Your Name},
+  author={Daniel Schmidt},
   year={2025},
-  url={https://github.com/yourusername/bioneuro-olfactory-fusion}
+  url={https://github.com/danieleschmidt/bioneuro-olfactory-fusion}
 }
 
 @article{tokyo_tech_moth_2025,
