@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Base Python Environment
 # =============================================================================
-FROM python:3.11-slim as python-base
+FROM python:3.13-slim as python-base
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -117,7 +117,7 @@ RUN mkdir -p /app/data /app/logs /app/models \
 # =============================================================================
 # Stage 6: Production Runtime
 # =============================================================================
-FROM python:3.11-slim as production
+FROM python:3.13-slim as production
 
 # Security updates and minimal runtime dependencies
 RUN apt-get update \
@@ -198,7 +198,7 @@ CMD ["python", "-m", "bioneuro_olfactory.api.server", "--neuromorphic"]
 # =============================================================================
 # Stage 8: Edge Deployment
 # =============================================================================
-FROM python:3.11-alpine as edge
+FROM python:3.13-alpine as edge
 
 # Minimal Alpine-based image for edge devices
 RUN apk add --no-cache \
