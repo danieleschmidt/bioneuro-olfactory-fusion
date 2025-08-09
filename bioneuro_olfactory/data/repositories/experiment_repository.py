@@ -40,7 +40,8 @@ class ExperimentRepository(BaseRepository[ExperimentModel], TimestampMixin, Cach
         if cached:
             return cached
             
-        query = "SELECT * FROM experiments WHERE id = ?"\n        result = self.db.execute_query(query, (experiment_id,))
+        query = "SELECT * FROM experiments WHERE id = ?"
+        result = self.db.execute_query(query, (experiment_id,))
         
         if not result:
             return None
