@@ -59,14 +59,83 @@ class SpikeData:
             ] = 1
             
         return spike_matrix
+        
+    def compress_spikes(self, compression_ratio: float = 0.1) -> 'SpikeData':
+        """Compress spike data using temporal downsampling."""
+        if compression_ratio >= 1.0:
+            return self
+            
+        # Downsample spike times
+        step_size = int(1 / compression_ratio)
+        compressed_indices = np.arange(0, len(self.spike_times), step_size)
+        
+        return SpikeData(
+            spike_times=self.spike_times[compressed_indices] * compression_ratio,
+            neuron_indices=self.neuron_indices[compressed_indices],
+            num_neurons=self.num_neurons,
+            duration_ms=self.duration_ms * compression_ratio
+        )
+        
+    def get_spike_rate(self) -> float:
+        """Calculate average spike rate in Hz."""
+        if self.duration_ms <= 0:
+            return 0.0
+        return len(self.spike_times) / (self.duration_ms / 1000.0) / self.num_neurons
+        
+    def filter_neurons(self, active_threshold: int = 1) -> 'SpikeData':
+        """Filter out inactive neurons."""
+        # Count spikes per neuron
+        spike_counts = np.bincount(self.neuron_indices, minlength=self.num_neurons)
+        active_neurons = np.where(spike_counts >= active_threshold)[0]
+        
+        if len(active_neurons) == 0:
+            return self
+            
+        # Filter spikes from active neurons only
+        active_mask = np.isin(self.neuron_indices, active_neurons)
+        
+        # Remap neuron indices
+        neuron_mapping = {old_idx: new_idx for new_idx, old_idx in enumerate(active_neurons)}
+        new_neuron_indices = np.array([neuron_mapping[idx] for idx in self.neuron_indices[active_mask]])
+        
+        return SpikeData(
+            spike_times=self.spike_times[active_mask],
+            neuron_indices=new_neuron_indices,
+            num_neurons=len(active_neurons),
+            duration_ms=self.duration_ms
+        )
 
 
 class NeuromorphicAccelerator(ABC):
-    """Abstract base class for neuromorphic accelerators."""
+    """Enhanced abstract base class for neuromorphic accelerators."""
     
     def __init__(self, config: NeuromorphicConfig):
         self.config = config
         self.is_initialized = False
+        
+        # Performance monitoring
+        self.execution_times: deque = deque(maxlen=100)
+        self.energy_measurements: deque = deque(maxlen=100)
+        self.temperature_readings: deque = deque(maxlen=100)
+        self.throughput_history: deque = deque(maxlen=100)
+        
+        # Resource management
+        self.active_networks: Dict[str, Any] = {}
+        self.resource_usage = ResourceMonitor()
+        self.thermal_manager = ThermalManager(config.thermal_threshold_celsius)
+        self.power_manager = PowerManager(config.power_budget_watts)
+        
+        # Optimization features
+        self.network_cache: Dict[str, Any] = {}
+        self.adaptive_router = AdaptiveRouter() if config.enable_adaptive_routing else None
+        self.batch_processor = BatchProcessor() if config.enable_batch_processing else None
+        self.pipeline_optimizer = PipelineOptimizer() if config.enable_pipeline_optimization else None
+        
+        # Statistics
+        self.total_executions = 0
+        self.successful_executions = 0
+        self.failed_executions = 0
+        self.total_energy_consumed = 0.0
         
     @abstractmethod
     def initialize(self) -> bool:
@@ -91,7 +160,121 @@ class NeuromorphicAccelerator(ABC):
         
     def cleanup(self):
         """Cleanup resources."""
+        # Clear caches
+        self.network_cache.clear()
+        self.active_networks.clear()
+        
+        # Stop monitoring components
+        if hasattr(self, 'resource_usage'):
+            self.resource_usage.stop_monitoring()
+            
         self.is_initialized = False
+        
+    async def execute_batch(self, input_batch: List[SpikeData], 
+                          compiled_network: Any) -> List[SpikeData]:
+        """Execute batch of inputs for improved throughput."""
+        if not self.batch_processor:
+            # Fall back to sequential execution
+            results = []
+            for spike_data in input_batch:
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None, self.execute, spike_data, compiled_network
+                )
+                results.append(result)
+            return results
+            
+        return await self.batch_processor.process_batch(
+            self, input_batch, compiled_network
+        )
+        
+    def optimize_network(self, network_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply platform-specific optimizations to network configuration."""
+        optimized_config = network_config.copy()
+        
+        # Apply energy optimizations
+        if self.config.energy_optimization:
+            optimized_config = self._apply_energy_optimizations(optimized_config)
+            
+        # Apply adaptive routing optimizations
+        if self.adaptive_router:
+            optimized_config = self.adaptive_router.optimize_routing(optimized_config)
+            
+        # Apply pipeline optimizations
+        if self.pipeline_optimizer:
+            optimized_config = self.pipeline_optimizer.optimize_pipeline(optimized_config)
+            
+        return optimized_config
+        
+    def _apply_energy_optimizations(self, network_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply energy-aware optimizations."""
+        # Reduce precision where possible
+        if 'precision' not in network_config:
+            network_config['precision'] = 'int8'  # Lower precision for energy savings
+            
+        # Enable clock gating
+        network_config['enable_clock_gating'] = True
+        
+        # Optimize spike frequency
+        if 'max_spike_rate' not in network_config:
+            network_config['max_spike_rate'] = 100.0  # Hz
+            
+        return network_config
+        
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive performance statistics."""
+        stats = {
+            'total_executions': self.total_executions,
+            'successful_executions': self.successful_executions,
+            'failed_executions': self.failed_executions,
+            'success_rate': self.successful_executions / max(self.total_executions, 1),
+            'total_energy_consumed': self.total_energy_consumed,
+            'platform': self.config.platform.value
+        }
+        
+        # Add timing statistics
+        if self.execution_times:
+            stats.update({
+                'avg_execution_time_ms': np.mean(self.execution_times),
+                'min_execution_time_ms': np.min(self.execution_times),
+                'max_execution_time_ms': np.max(self.execution_times),
+                'execution_time_std_ms': np.std(self.execution_times)
+            })
+            
+        # Add energy statistics
+        if self.energy_measurements:
+            stats.update({
+                'avg_power_watts': np.mean(self.energy_measurements),
+                'min_power_watts': np.min(self.energy_measurements),
+                'max_power_watts': np.max(self.energy_measurements),
+                'energy_efficiency': np.mean(self.throughput_history) / np.mean(self.energy_measurements)
+                if self.energy_measurements and self.throughput_history else 0
+            })
+            
+        # Add thermal statistics
+        if self.temperature_readings:
+            stats.update({
+                'avg_temperature_c': np.mean(self.temperature_readings),
+                'max_temperature_c': np.max(self.temperature_readings),
+                'thermal_violations': sum(1 for t in self.temperature_readings 
+                                        if t > self.config.thermal_threshold_celsius)
+            })
+            
+        return stats
+        
+    def record_execution(self, execution_time: float, energy_used: float, 
+                        temperature: float, throughput: float, success: bool):
+        """Record execution metrics."""
+        self.total_executions += 1
+        
+        if success:
+            self.successful_executions += 1
+            self.execution_times.append(execution_time)
+            self.energy_measurements.append(energy_used)
+            self.temperature_readings.append(temperature)
+            self.throughput_history.append(throughput)
+            self.total_energy_consumed += energy_used * (execution_time / 1000.0)  # Wh
+        else:
+            self.failed_executions += 1
 
 
 class LoihiAccelerator(NeuromorphicAccelerator):
@@ -101,6 +284,8 @@ class LoihiAccelerator(NeuromorphicAccelerator):
         super().__init__(config)
         self.loihi_board = None
         self.network_graph = None
+        self.chip_temperature = 25.0  # Celsius
+        self.power_consumption = 0.5  # Watts
         
     def initialize(self) -> bool:
         """Initialize Loihi hardware."""
@@ -650,6 +835,284 @@ class NeuromorphicAcceleratorManager:
             accelerator.cleanup()
         self.accelerators.clear()
         logger.info("All accelerators cleaned up")
+
+
+
+class ResourceMonitor:
+    """Monitors resource usage of neuromorphic hardware."""
+    
+    def __init__(self):
+        self.monitoring = False
+        self.monitor_thread = None
+        self.cpu_usage_history: deque = deque(maxlen=100)
+        self.memory_usage_history: deque = deque(maxlen=100)
+        
+    def start_monitoring(self):
+        """Start resource monitoring."""
+        if not self.monitoring:
+            self.monitoring = True
+            self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+            self.monitor_thread.start()
+            
+    def stop_monitoring(self):
+        """Stop resource monitoring."""
+        self.monitoring = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=1.0)
+            
+    def _monitor_loop(self):
+        """Main monitoring loop."""
+        while self.monitoring:
+            try:
+                # Get system metrics
+                cpu_percent = psutil.cpu_percent(interval=1)
+                memory = psutil.virtual_memory()
+                
+                self.cpu_usage_history.append(cpu_percent)
+                self.memory_usage_history.append(memory.percent)
+                
+                time.sleep(5)  # Monitor every 5 seconds
+            except Exception as e:
+                logger.error(f"Resource monitoring error: {e}")
+                
+    def get_current_usage(self) -> Dict[str, float]:
+        """Get current resource usage."""
+        return {
+            'cpu_percent': self.cpu_usage_history[-1] if self.cpu_usage_history else 0,
+            'memory_percent': self.memory_usage_history[-1] if self.memory_usage_history else 0,
+            'avg_cpu_percent': np.mean(self.cpu_usage_history) if self.cpu_usage_history else 0,
+            'avg_memory_percent': np.mean(self.memory_usage_history) if self.memory_usage_history else 0
+        }
+
+
+class ThermalManager:
+    """Manages thermal conditions for neuromorphic hardware."""
+    
+    def __init__(self, threshold_celsius: float = 85.0):
+        self.threshold_celsius = threshold_celsius
+        self.current_temperature = 25.0
+        self.thermal_violations = 0
+        
+    def update_temperature(self, temperature_celsius: float):
+        """Update current temperature reading."""
+        self.current_temperature = temperature_celsius
+        
+        if temperature_celsius > self.threshold_celsius:
+            self.thermal_violations += 1
+            logger.warning(f"Thermal violation: {temperature_celsius:.1f}°C > {self.threshold_celsius:.1f}°C")
+            
+    def should_throttle(self) -> bool:
+        """Check if thermal throttling should be applied."""
+        return self.current_temperature > self.threshold_celsius * 0.9
+        
+    def get_throttle_factor(self) -> float:
+        """Get throttling factor (0.0 to 1.0)."""
+        if not self.should_throttle():
+            return 1.0
+            
+        # Linear throttling based on temperature
+        excess_temp = self.current_temperature - (self.threshold_celsius * 0.9)
+        max_excess = self.threshold_celsius * 0.1
+        throttle_factor = max(0.1, 1.0 - (excess_temp / max_excess))
+        
+        return throttle_factor
+
+
+class PowerManager:
+    """Manages power consumption and DVFS for neuromorphic hardware."""
+    
+    def __init__(self, power_budget_watts: float = 10.0):
+        self.power_budget_watts = power_budget_watts
+        self.current_power_watts = 0.0
+        self.voltage_levels = [0.8, 0.9, 1.0, 1.1, 1.2]  # Available voltage levels
+        self.frequency_levels = [100, 200, 400, 800, 1000]  # MHz
+        self.current_voltage_idx = 2  # Default to middle level
+        self.current_frequency_idx = 2
+        
+    def update_power_consumption(self, power_watts: float):
+        """Update current power consumption."""
+        self.current_power_watts = power_watts
+        
+        # Auto-adjust DVFS if over budget
+        if power_watts > self.power_budget_watts:
+            self._reduce_power()
+        elif power_watts < self.power_budget_watts * 0.8:
+            self._increase_power()
+            
+    def _reduce_power(self):
+        """Reduce power consumption by lowering voltage/frequency."""
+        if self.current_voltage_idx > 0:
+            self.current_voltage_idx -= 1
+            logger.info(f"Reduced voltage to {self.voltage_levels[self.current_voltage_idx]}V")
+        elif self.current_frequency_idx > 0:
+            self.current_frequency_idx -= 1
+            logger.info(f"Reduced frequency to {self.frequency_levels[self.current_frequency_idx]}MHz")
+            
+    def _increase_power(self):
+        """Increase power for better performance if budget allows."""
+        if self.current_frequency_idx < len(self.frequency_levels) - 1:
+            self.current_frequency_idx += 1
+            logger.info(f"Increased frequency to {self.frequency_levels[self.current_frequency_idx]}MHz")
+        elif self.current_voltage_idx < len(self.voltage_levels) - 1:
+            self.current_voltage_idx += 1
+            logger.info(f"Increased voltage to {self.voltage_levels[self.current_voltage_idx]}V")
+            
+    def get_current_settings(self) -> Dict[str, Any]:
+        """Get current DVFS settings."""
+        return {
+            'voltage_v': self.voltage_levels[self.current_voltage_idx],
+            'frequency_mhz': self.frequency_levels[self.current_frequency_idx],
+            'power_watts': self.current_power_watts,
+            'power_budget_watts': self.power_budget_watts,
+            'utilization': self.current_power_watts / self.power_budget_watts
+        }
+
+
+class AdaptiveRouter:
+    """Adaptive routing optimizer for neuromorphic networks."""
+    
+    def __init__(self):
+        self.routing_history: Dict[str, List[float]] = {}
+        self.optimal_routes: Dict[str, Dict[str, Any]] = {}
+        
+    def optimize_routing(self, network_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize routing based on historical performance."""
+        config_hash = self._hash_config(network_config)
+        
+        if config_hash in self.optimal_routes:
+            # Use cached optimal routing
+            network_config.update(self.optimal_routes[config_hash])
+        else:
+            # Apply heuristic routing optimizations
+            network_config = self._apply_routing_heuristics(network_config)
+            
+        return network_config
+        
+    def _apply_routing_heuristics(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply routing optimization heuristics."""
+        # Enable shortest path routing
+        config['routing_algorithm'] = 'shortest_path'
+        
+        # Enable load balancing across cores
+        config['enable_load_balancing'] = True
+        
+        # Minimize cross-chip communication
+        config['minimize_cross_chip'] = True
+        
+        return config
+        
+    def record_performance(self, config_hash: str, latency_ms: float, 
+                          energy_consumed: float):
+        """Record routing performance for learning."""
+        if config_hash not in self.routing_history:
+            self.routing_history[config_hash] = []
+            
+        # Combined performance score (lower is better)
+        score = latency_ms + energy_consumed * 10  # Weight energy 10x
+        self.routing_history[config_hash].append(score)
+        
+    def _hash_config(self, config: Dict[str, Any]) -> str:
+        """Generate hash for network configuration."""
+        import hashlib
+        config_str = str(sorted(config.items()))
+        return hashlib.md5(config_str.encode()).hexdigest()[:8]
+
+
+class BatchProcessor:
+    """Batch processing optimizer for neuromorphic execution."""
+    
+    def __init__(self, max_batch_size: int = 16):
+        self.max_batch_size = max_batch_size
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        
+    async def process_batch(self, accelerator: NeuromorphicAccelerator,
+                          input_batch: List[SpikeData], 
+                          compiled_network: Any) -> List[SpikeData]:
+        """Process batch of spike data efficiently."""
+        if len(input_batch) <= 1:
+            # Single input, no batching needed
+            return [accelerator.execute(input_batch[0], compiled_network)]
+            
+        # Split into sub-batches if needed
+        sub_batches = [
+            input_batch[i:i + self.max_batch_size]
+            for i in range(0, len(input_batch), self.max_batch_size)
+        ]
+        
+        results = []
+        for sub_batch in sub_batches:
+            # Process sub-batch
+            if hasattr(accelerator, '_execute_batch_native'):
+                # Use native batch execution if available
+                batch_result = await asyncio.get_event_loop().run_in_executor(
+                    None, accelerator._execute_batch_native, sub_batch, compiled_network
+                )
+                results.extend(batch_result)
+            else:
+                # Fall back to parallel execution
+                futures = [
+                    asyncio.get_event_loop().run_in_executor(
+                        self.executor, accelerator.execute, spike_data, compiled_network
+                    )
+                    for spike_data in sub_batch
+                ]
+                batch_results = await asyncio.gather(*futures)
+                results.extend(batch_results)
+                
+        return results
+
+
+class PipelineOptimizer:
+    """Pipeline optimization for neuromorphic processing."""
+    
+    def __init__(self):
+        self.pipeline_stages = ['input', 'encode', 'process', 'decode', 'output']
+        self.stage_latencies: Dict[str, deque] = {
+            stage: deque(maxlen=100) for stage in self.pipeline_stages
+        }
+        
+    def optimize_pipeline(self, network_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize pipeline configuration."""
+        # Enable pipeline parallelism
+        network_config['enable_pipeline_parallelism'] = True
+        
+        # Set optimal pipeline depth based on latency analysis
+        if self._has_sufficient_history():
+            optimal_depth = self._calculate_optimal_pipeline_depth()
+            network_config['pipeline_depth'] = optimal_depth
+            
+        # Enable prefetching
+        network_config['enable_prefetch'] = True
+        
+        return network_config
+        
+    def _has_sufficient_history(self) -> bool:
+        """Check if we have enough history for optimization."""
+        return all(len(latencies) >= 10 for latencies in self.stage_latencies.values())
+        
+    def _calculate_optimal_pipeline_depth(self) -> int:
+        """Calculate optimal pipeline depth based on stage latencies."""
+        # Simple heuristic: balance pipeline depth with latency
+        avg_latencies = {
+            stage: np.mean(latencies) 
+            for stage, latencies in self.stage_latencies.items()
+        }
+        
+        max_latency_stage = max(avg_latencies, key=avg_latencies.get)
+        max_latency = avg_latencies[max_latency_stage]
+        
+        # Deeper pipeline for stages with higher latency
+        if max_latency > 10:  # ms
+            return 8
+        elif max_latency > 5:
+            return 4
+        else:
+            return 2
+            
+    def record_stage_latency(self, stage: str, latency_ms: float):
+        """Record latency for pipeline stage."""
+        if stage in self.stage_latencies:
+            self.stage_latencies[stage].append(latency_ms)
 
 
 # Global manager instance

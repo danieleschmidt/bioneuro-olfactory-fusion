@@ -47,7 +47,12 @@ dependencies = [
     "pydantic>=1.8.0",
     "click>=8.0.0",
     "tqdm>=4.62.0",
-    "PyYAML>=6.0"
+    "PyYAML>=6.0",
+    "psutil>=5.8.0",
+    "watchdog>=2.1.0",
+    "jsonschema>=4.0.0",
+    "colorlog>=6.0.0",
+    "toml>=0.10.0"
 ]
 
 [project.optional-dependencies]

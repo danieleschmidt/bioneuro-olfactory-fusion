@@ -11,6 +11,9 @@ from pathlib import Path
 import queue
 import multiprocessing as mp
 from collections import defaultdict
+from contextlib import contextmanager
+import asyncio
+import random
 
 from ..core.error_handling import get_error_handler, BioNeuroError, ErrorSeverity
 from .performance_profiler import get_profiler
@@ -56,6 +59,8 @@ class ProcessingTask:
     retry_count: int = 0
     max_retries: int = 3
     metadata: Dict[str, Any] = field(default_factory=dict)
+    circuit_breaker_key: Optional[str] = None
+    fallback_strategy: str = "none"  # none, cached, simplified
     
     def __post_init__(self):
         if not self.task_id:
@@ -77,9 +82,16 @@ class TaskScheduler:
         self.error_handler = get_error_handler()
         self.profiler = get_profiler()
         
+        # Fault tolerance components
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        self.health_checker = HealthChecker(self)
+        self.fault_detector = FaultDetector(self)
+        self.recovery_manager = RecoveryManager(self)
+        
         # Scheduler thread
         self.scheduler_active = False
         self.scheduler_thread: Optional[threading.Thread] = None
+        self._fault_tolerance_enabled = True
         
     def register_worker(self, worker: WorkerNode):
         """Register a new worker node."""
@@ -107,6 +119,11 @@ class TaskScheduler:
         self.scheduler_active = True
         self.scheduler_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.scheduler_thread.start()
+        
+        # Start fault tolerance components
+        if self._fault_tolerance_enabled:
+            self.health_checker.start_monitoring()
+            
         self.error_handler.logger.info("Task scheduler started")
         
     def stop_scheduler(self):
@@ -114,6 +131,11 @@ class TaskScheduler:
         self.scheduler_active = False
         if self.scheduler_thread:
             self.scheduler_thread.join(timeout=5.0)
+            
+        # Stop fault tolerance components
+        if self._fault_tolerance_enabled:
+            self.health_checker.stop_monitoring()
+            
         self.error_handler.logger.info("Task scheduler stopped")
         
     def _scheduler_loop(self):
@@ -188,17 +210,31 @@ class TaskScheduler:
             self.error_handler.logger.debug(f"Task completed: {task.task_id}")
             
         except Exception as e:
-            # Handle task failure
-            task.retry_count += 1
-            
-            if task.retry_count <= task.max_retries:
-                # Retry task
-                self.task_queue.put((-task.priority, time.time(), task))
-                self.error_handler.logger.warning(f"Task retry {task.retry_count}: {task.task_id}")
+            # Handle task failure with fault tolerance
+            if self._fault_tolerance_enabled:
+                # Detect and analyze fault
+                fault_info = self.fault_detector.detect_faults(task, e)
+                
+                # Attempt recovery
+                recovery_success = self.recovery_manager.attempt_recovery(task, fault_info)
+                
+                if recovery_success and task.retry_count < task.max_retries:
+                    task.retry_count += 1
+                    self.task_queue.put((-task.priority, time.time(), task))
+                    self.error_handler.logger.warning(f"Task retry {task.retry_count} after recovery: {task.task_id}")
+                else:
+                    self.failed_tasks.append(task)
+                    self.error_handler.logger.error(f"Task failed permanently: {task.task_id}, {str(e)}")
             else:
-                # Task failed permanently
-                self.failed_tasks.append(task)
-                self.error_handler.logger.error(f"Task failed: {task.task_id}, {str(e)}")
+                # Original retry logic
+                task.retry_count += 1
+                
+                if task.retry_count <= task.max_retries:
+                    self.task_queue.put((-task.priority, time.time(), task))
+                    self.error_handler.logger.warning(f"Task retry {task.retry_count}: {task.task_id}")
+                else:
+                    self.failed_tasks.append(task)
+                    self.error_handler.logger.error(f"Task failed: {task.task_id}, {str(e)}")
                 
         finally:
             # Update worker status
@@ -634,6 +670,345 @@ class AutoScaler:
             return True
             
         return False
+
+
+class CircuitBreakerState(Enum):
+    """Circuit breaker states."""
+    CLOSED = "closed"      # Normal operation
+    OPEN = "open"          # Failing, requests blocked
+    HALF_OPEN = "half_open" # Testing recovery
+
+
+class CircuitBreaker:
+    """Circuit breaker for fault tolerance."""
+    
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+        expected_exception: Exception = Exception
+    ):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.expected_exception = expected_exception
+        
+        self.failure_count = 0
+        self.last_failure_time = 0
+        self.state = CircuitBreakerState.CLOSED
+        self.success_count = 0
+        
+    def call(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute function with circuit breaker protection."""
+        if self.state == CircuitBreakerState.OPEN:
+            if self._should_attempt_reset():
+                self.state = CircuitBreakerState.HALF_OPEN
+            else:
+                raise Exception(f"Circuit breaker is OPEN")
+                
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except self.expected_exception as e:
+            self._on_failure()
+            raise e
+            
+    def _should_attempt_reset(self) -> bool:
+        """Check if circuit breaker should attempt reset."""
+        return time.time() - self.last_failure_time >= self.recovery_timeout
+        
+    def _on_success(self):
+        """Handle successful call."""
+        self.failure_count = 0
+        if self.state == CircuitBreakerState.HALF_OPEN:
+            self.success_count += 1
+            if self.success_count >= 3:  # Require 3 successes to close
+                self.state = CircuitBreakerState.CLOSED
+                self.success_count = 0
+                
+    def _on_failure(self):
+        """Handle failed call."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        self.success_count = 0
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitBreakerState.OPEN
+            
+    @property
+    def is_closed(self) -> bool:
+        return self.state == CircuitBreakerState.CLOSED
+        
+    @property
+    def is_open(self) -> bool:
+        return self.state == CircuitBreakerState.OPEN
+        
+    @property
+    def is_half_open(self) -> bool:
+        return self.state == CircuitBreakerState.HALF_OPEN
+
+
+class HealthChecker:
+    """Health monitoring for distributed nodes."""
+    
+    def __init__(self, scheduler: 'TaskScheduler'):
+        self.scheduler = scheduler
+        self.health_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=100))
+        self.health_check_interval = 30.0
+        self._monitoring = False
+        self._monitor_thread = None
+        
+    def start_monitoring(self):
+        """Start health monitoring."""
+        if not self._monitoring:
+            self._monitoring = True
+            self._monitor_thread = threading.Thread(
+                target=self._monitoring_loop,
+                daemon=True
+            )
+            self._monitor_thread.start()
+            
+    def stop_monitoring(self):
+        """Stop health monitoring."""
+        self._monitoring = False
+        if self._monitor_thread:
+            self._monitor_thread.join(timeout=5.0)
+            
+    def _monitoring_loop(self):
+        """Main health monitoring loop."""
+        while self._monitoring:
+            try:
+                self._check_all_nodes()
+                time.sleep(self.health_check_interval)
+            except Exception as e:
+                self.scheduler.error_handler.logger.error(f"Health monitoring error: {e}")
+                
+    def _check_all_nodes(self):
+        """Check health of all nodes."""
+        for node_id, node in list(self.scheduler.workers.items()):
+            health_score = self._calculate_health_score(node)
+            self.health_history[node_id].append({
+                'timestamp': time.time(),
+                'score': health_score,
+                'status': node.status
+            })
+            
+            # Update node status based on health
+            if health_score < 0.3:
+                self._mark_node_unhealthy(node_id, node)
+            elif health_score > 0.7 and node.status == 'offline':
+                self._mark_node_healthy(node_id, node)
+                
+    def _calculate_health_score(self, node: WorkerNode) -> float:
+        """Calculate health score for a node."""
+        current_time = time.time()
+        
+        # Heartbeat freshness
+        heartbeat_age = current_time - node.last_heartbeat
+        heartbeat_score = max(0, 1.0 - (heartbeat_age / 60.0))  # 1 minute tolerance
+        
+        # Load factor
+        load_score = 1.0 - (node.current_load / node.max_capacity)
+        
+        # Historical reliability
+        history = self.health_history[node.node_id]
+        if history:
+            recent_scores = [h['score'] for h in list(history)[-10:]]
+            historical_score = sum(recent_scores) / len(recent_scores)
+        else:
+            historical_score = 1.0
+            
+        # Weighted combination
+        total_score = (
+            heartbeat_score * 0.4 +
+            load_score * 0.3 +
+            historical_score * 0.3
+        )
+        
+        return max(0.0, min(1.0, total_score))
+        
+    def _mark_node_unhealthy(self, node_id: str, node: WorkerNode):
+        """Mark node as unhealthy."""
+        if node.status != 'offline':
+            node.status = 'offline'
+            self.scheduler.error_handler.logger.warning(f"Node {node_id} marked as unhealthy")
+            
+    def _mark_node_healthy(self, node_id: str, node: WorkerNode):
+        """Mark node as healthy."""
+        node.status = 'idle'
+        self.scheduler.error_handler.logger.info(f"Node {node_id} recovered and marked as healthy")
+        
+    def get_node_health(self, node_id: str) -> Dict[str, Any]:
+        """Get detailed health information for a node."""
+        if node_id not in self.scheduler.workers:
+            return {'error': 'Node not found'}
+            
+        node = self.scheduler.workers[node_id]
+        history = list(self.health_history[node_id])
+        
+        return {
+            'node_id': node_id,
+            'current_score': self._calculate_health_score(node),
+            'status': node.status,
+            'last_heartbeat': node.last_heartbeat,
+            'current_load': node.current_load,
+            'health_history': history[-10:]  # Last 10 entries
+        }
+
+
+class FaultDetector:
+    """Detects and classifies faults in the distributed system."""
+    
+    def __init__(self, scheduler: 'TaskScheduler'):
+        self.scheduler = scheduler
+        self.fault_patterns: Dict[str, int] = defaultdict(int)
+        self.anomaly_threshold = 3  # Number of anomalies to trigger alert
+        
+    def detect_faults(self, task: ProcessingTask, error: Exception) -> Dict[str, Any]:
+        """Analyze task failure and detect fault patterns."""
+        fault_info = {
+            'task_id': task.task_id,
+            'error_type': type(error).__name__,
+            'error_message': str(error),
+            'timestamp': time.time(),
+            'operation': task.operation,
+            'retry_count': task.retry_count
+        }
+        
+        # Classify fault type
+        fault_type = self._classify_fault(error)
+        fault_info['fault_type'] = fault_type
+        
+        # Update fault patterns
+        pattern_key = f"{task.operation}_{fault_type}"
+        self.fault_patterns[pattern_key] += 1
+        
+        # Check for patterns indicating systemic issues
+        if self.fault_patterns[pattern_key] >= self.anomaly_threshold:
+            fault_info['systemic_issue'] = True
+            fault_info['pattern_count'] = self.fault_patterns[pattern_key]
+            self.scheduler.error_handler.logger.warning(
+                f"Systemic fault pattern detected: {pattern_key} ({self.fault_patterns[pattern_key]} occurrences)"
+            )
+        else:
+            fault_info['systemic_issue'] = False
+            
+        return fault_info
+        
+    def _classify_fault(self, error: Exception) -> str:
+        """Classify fault type based on error characteristics."""
+        error_str = str(error).lower()
+        
+        if 'timeout' in error_str or 'connection' in error_str:
+            return 'network'
+        elif 'memory' in error_str or 'oom' in error_str:
+            return 'resource'
+        elif 'permission' in error_str or 'access' in error_str:
+            return 'security'
+        elif 'corrupt' in error_str or 'invalid' in error_str:
+            return 'data'
+        else:
+            return 'unknown'
+            
+    def get_fault_summary(self) -> Dict[str, Any]:
+        """Get summary of detected faults."""
+        total_faults = sum(self.fault_patterns.values())
+        
+        # Group by fault type
+        fault_types = defaultdict(int)
+        for pattern, count in self.fault_patterns.items():
+            fault_type = pattern.split('_')[-1]
+            fault_types[fault_type] += count
+            
+        return {
+            'total_faults': total_faults,
+            'fault_patterns': dict(self.fault_patterns),
+            'fault_types': dict(fault_types),
+            'top_patterns': sorted(
+                self.fault_patterns.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:5]
+        }
+
+
+class RecoveryManager:
+    """Manages recovery strategies for failed tasks and nodes."""
+    
+    def __init__(self, scheduler: 'TaskScheduler'):
+        self.scheduler = scheduler
+        self.recovery_strategies = {
+            'network': self._network_recovery,
+            'resource': self._resource_recovery,
+            'data': self._data_recovery,
+            'unknown': self._default_recovery
+        }
+        
+    def attempt_recovery(self, task: ProcessingTask, fault_info: Dict[str, Any]) -> bool:
+        """Attempt to recover from task failure."""
+        fault_type = fault_info.get('fault_type', 'unknown')
+        
+        try:
+            recovery_func = self.recovery_strategies.get(fault_type, self._default_recovery)
+            success = recovery_func(task, fault_info)
+            
+            if success:
+                self.scheduler.error_handler.logger.info(f"Recovery successful for task {task.task_id}")
+            else:
+                self.scheduler.error_handler.logger.warning(f"Recovery failed for task {task.task_id}")
+                
+            return success
+        except Exception as e:
+            self.scheduler.error_handler.logger.error(f"Recovery attempt failed: {e}")
+            return False
+            
+    def _network_recovery(self, task: ProcessingTask, fault_info: Dict[str, Any]) -> bool:
+        """Recover from network-related failures."""
+        # Wait and retry with backoff
+        wait_time = min(2 ** task.retry_count, 30)  # Exponential backoff, max 30s
+        time.sleep(wait_time)
+        
+        # Try to find an alternative node
+        available_workers = [
+            w for w in self.scheduler.workers.values()
+            if w.is_available() and w.status != 'offline'
+        ]
+        
+        return len(available_workers) > 0
+        
+    def _resource_recovery(self, task: ProcessingTask, fault_info: Dict[str, Any]) -> bool:
+        """Recover from resource-related failures."""
+        # Trigger memory cleanup
+        import gc
+        gc.collect()
+        
+        # Reduce task complexity if possible
+        if 'batch_size' in task.metadata:
+            current_batch = task.metadata.get('batch_size', 32)
+            task.metadata['batch_size'] = max(1, current_batch // 2)
+            return True
+            
+        return False
+        
+    def _data_recovery(self, task: ProcessingTask, fault_info: Dict[str, Any]) -> bool:
+        """Recover from data-related failures."""
+        # Check if fallback data is available
+        if task.fallback_strategy == 'cached':
+            # Try to use cached result
+            return True
+        elif task.fallback_strategy == 'simplified':
+            # Use simplified processing
+            task.metadata['use_simplified'] = True
+            return True
+            
+        return False
+        
+    def _default_recovery(self, task: ProcessingTask, fault_info: Dict[str, Any]) -> bool:
+        """Default recovery strategy."""
+        # Simple exponential backoff
+        wait_time = min(2 ** task.retry_count, 60)
+        time.sleep(wait_time)
+        return True
 
 
 # Global processor instance

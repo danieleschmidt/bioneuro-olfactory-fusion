@@ -8,7 +8,7 @@ import os
 import json
 import yaml
 import toml
-from typing import Dict, Any, Optional, List, Union, Type
+from typing import Dict, Any, Optional, List, Union, Type, Callable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from enum import Enum
@@ -17,8 +17,199 @@ from copy import deepcopy
 import threading
 from datetime import datetime
 import hashlib
+import time
+import shutil
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
+import tempfile
+from contextlib import contextmanager
+from collections import defaultdict, deque
+import signal
+import atexit
+
+# Try to import watchdog for file monitoring
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    WATCHDOG_AVAILABLE = True
+except ImportError:
+    Observer = None
+    FileSystemEventHandler = None
+    WATCHDOG_AVAILABLE = False
+
+# Try to import jsonschema for validation
+try:
+    import jsonschema
+    from jsonschema import validate, ValidationError as JsonSchemaValidationError
+    JSONSCHEMA_AVAILABLE = True
+except ImportError:
+    jsonschema = None
+    JsonSchemaValidationError = None
+    JSONSCHEMA_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ConfigBackup:
+    """Configuration backup metadata."""
+    path: Path
+    timestamp: datetime
+    version: str
+    size_bytes: int
+    hash_sha256: str
+    comment: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "path": str(self.path),
+            "timestamp": self.timestamp.isoformat(),
+            "version": self.version,
+            "size_bytes": self.size_bytes,
+            "hash_sha256": self.hash_sha256,
+            "comment": self.comment
+        }
+        
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ConfigBackup':
+        """Create from dictionary."""
+        return cls(
+            path=Path(data["path"]),
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            version=data["version"],
+            size_bytes=data["size_bytes"],
+            hash_sha256=data["hash_sha256"],
+            comment=data.get("comment")
+        )
+
+
+@dataclass
+class ConfigChangeEvent:
+    """Configuration change event."""
+    timestamp: datetime
+    change_type: str  # 'file_changed', 'manual_update', 'reload'
+    old_config: Optional[ApplicationConfig]
+    new_config: ApplicationConfig
+    changes: Dict[str, Any]
+    source: str  # 'file', 'api', 'environment'
+    user: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for logging."""
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "change_type": self.change_type,
+            "changes": self.changes,
+            "source": self.source,
+            "user": self.user
+        }
+
+
+class ConfigFileWatcher(FileSystemEventHandler):
+    """File system event handler for configuration files."""
+    
+    def __init__(self, config_manager: 'EnhancedConfigManager'):
+        super().__init__()
+        self.config_manager = config_manager
+        self.last_reload_time = 0
+        self.reload_debounce_seconds = 1.0  # Prevent rapid reloads
+        
+    def on_modified(self, event):
+        """Handle file modification events."""
+        if event.is_directory:
+            return
+            
+        file_path = Path(event.src_path)
+        
+        # Check if this is our config file
+        if (self.config_manager._config_file_path and 
+            file_path.samefile(self.config_manager._config_file_path)):
+            
+            current_time = time.time()
+            if current_time - self.last_reload_time < self.reload_debounce_seconds:
+                return
+                
+            self.last_reload_time = current_time
+            
+            # Schedule reload in background thread
+            self.config_manager._schedule_reload()
+
+
+class ConfigValidationCache:
+    """Cache for configuration validation results."""
+    
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 300):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self.cache: Dict[str, tuple] = {}  # hash -> (result, timestamp)
+        self.access_times: Dict[str, float] = {}
+        self.lock = threading.RLock()
+        
+    def get(self, config_hash: str) -> Optional[List[str]]:
+        """Get cached validation result."""
+        with self.lock:
+            if config_hash not in self.cache:
+                return None
+                
+            result, timestamp = self.cache[config_hash]
+            
+            # Check TTL
+            if time.time() - timestamp > self.ttl_seconds:
+                del self.cache[config_hash]
+                if config_hash in self.access_times:
+                    del self.access_times[config_hash]
+                return None
+                
+            # Update access time
+            self.access_times[config_hash] = time.time()
+            return result
+            
+    def put(self, config_hash: str, validation_result: List[str]):
+        """Cache validation result."""
+        with self.lock:
+            current_time = time.time()
+            
+            # Evict old entries if cache is full
+            if len(self.cache) >= self.max_size:
+                self._evict_oldest()
+                
+            self.cache[config_hash] = (validation_result.copy(), current_time)
+            self.access_times[config_hash] = current_time
+            
+    def _evict_oldest(self):
+        """Evict least recently used entries."""
+        if not self.access_times:
+            return
+            
+        # Find oldest entry
+        oldest_hash = min(self.access_times.keys(), 
+                         key=lambda k: self.access_times[k])
+        
+        del self.cache[oldest_hash]
+        del self.access_times[oldest_hash]
+        
+    def clear(self):
+        """Clear validation cache."""
+        with self.lock:
+            self.cache.clear()
+            self.access_times.clear()
+            
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        with self.lock:
+            return {
+                "size": len(self.cache),
+                "max_size": self.max_size,
+                "hit_rate": self._calculate_hit_rate()
+            }
+            
+    def _calculate_hit_rate(self) -> float:
+        """Calculate cache hit rate (simplified)."""
+        # This is a simplified implementation
+        # In a real implementation, you'd track hits/misses
+        return 0.0
 
 
 class ConfigFormat(Enum):
@@ -277,10 +468,18 @@ class ApplicationConfig:
         return all_errors
 
 
-class ConfigManager:
-    """Comprehensive configuration management system."""
+class EnhancedConfigManager:
+    """Enhanced configuration management system with hot-reloading and advanced features."""
     
-    def __init__(self, config_dirs: Optional[List[str]] = None):
+    def __init__(
+        self,
+        config_dirs: Optional[List[str]] = None,
+        enable_hot_reload: bool = True,
+        enable_backup: bool = True,
+        enable_validation_cache: bool = True,
+        backup_retention_count: int = 10,
+        hot_reload_debounce_seconds: float = 1.0
+    ):
         self.config_dirs = config_dirs or [
             "/etc/bioneuro",
             "~/.config/bioneuro", 
@@ -288,17 +487,59 @@ class ConfigManager:
             "."
         ]
         
+        # Core configuration state
         self._config: Optional[ApplicationConfig] = None
         self._config_lock = threading.RLock()
-        self._config_watchers: List[callable] = []
+        self._config_watchers: List[Callable] = []
         self._config_file_hash: Optional[str] = None
         self._config_file_path: Optional[Path] = None
+        
+        # Enhanced features flags
+        self.enable_hot_reload = enable_hot_reload and WATCHDOG_AVAILABLE
+        self.enable_backup = enable_backup
+        self.enable_validation_cache = enable_validation_cache
+        self.backup_retention_count = backup_retention_count
+        self.hot_reload_debounce_seconds = hot_reload_debounce_seconds
+        
+        # Hot reload components
+        self._file_observer: Optional[Observer] = None
+        self._file_watcher: Optional[ConfigFileWatcher] = None
+        self._reload_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="config-reload")
+        self._pending_reload = False
+        
+        # Backup management
+        self._backup_dir: Optional[Path] = None
+        self._backups: List[ConfigBackup] = []
+        self._backup_lock = threading.Lock()
+        
+        # Validation cache
+        self._validation_cache: Optional[ConfigValidationCache] = None
+        if self.enable_validation_cache:
+            self._validation_cache = ConfigValidationCache()
+            
+        # Change tracking
+        self._change_history: deque = deque(maxlen=100)  # Keep last 100 changes
+        self._change_callbacks: Dict[str, List[Callable]] = defaultdict(list)
+        
+        # Schema validation
+        self._config_schema: Optional[Dict[str, Any]] = None
+        
+        # Cleanup registration
+        atexit.register(self.cleanup)
+        
+        # Initialize backup directory
+        if self.enable_backup:
+            self._setup_backup_directory()
+            
+        logger.info(f"Enhanced ConfigManager initialized (hot_reload={self.enable_hot_reload}, "
+                   f"backup={self.enable_backup}, validation_cache={self.enable_validation_cache})")
         
     def load_config(
         self,
         config_file: Optional[str] = None,
         format: Optional[ConfigFormat] = None,
-        validate: bool = True
+        validate: bool = True,
+        create_backup: bool = True
     ) -> ApplicationConfig:
         """Load configuration from file or environment variables.
         
@@ -306,11 +547,21 @@ class ConfigManager:
             config_file: Specific config file path
             format: Configuration format (auto-detected if not specified)
             validate: Whether to validate configuration
+            create_backup: Whether to create backup of current config
             
         Returns:
             Loaded and validated configuration
         """
         with self._config_lock:
+            old_config = self._config
+            
+            # Create backup of current configuration if requested
+            if create_backup and self._config and self.enable_backup:
+                try:
+                    self._create_backup("pre_reload")
+                except Exception as e:
+                    logger.warning(f"Failed to create config backup: {e}")
+                    
             if config_file:
                 config_path = Path(config_file)
             else:
@@ -330,11 +581,38 @@ class ConfigManager:
             config_data = self._merge_configs(config_data, env_overrides)
             
             # Create configuration object
-            self._config = self._create_config_object(config_data)
+            new_config = self._create_config_object(config_data)
             
-            # Validate if requested
+            # Validate if requested (with caching)
             if validate:
-                self._validate_config(self._config)
+                self._validate_config_cached(new_config)
+                
+            # Schema validation if available
+            if JSONSCHEMA_AVAILABLE and self._config_schema:
+                try:
+                    config_dict = self._config_to_dict(new_config)
+                    jsonschema.validate(config_dict, self._config_schema)
+                except JsonSchemaValidationError as e:
+                    raise ConfigValidationError(f"Schema validation failed: {e.message}")
+                    
+            self._config = new_config
+            
+            # Setup hot reload monitoring
+            if self.enable_hot_reload and config_path:
+                self._setup_file_monitoring(config_path)
+                
+            # Track configuration change
+            if old_config != new_config:
+                changes = self._detect_config_changes(old_config, new_config)
+                change_event = ConfigChangeEvent(
+                    timestamp=datetime.now(),
+                    change_type="reload",
+                    old_config=old_config,
+                    new_config=new_config,
+                    changes=changes,
+                    source="file"
+                )
+                self._record_config_change(change_event)
                 
             logger.info("Configuration loaded successfully")
             return self._config
@@ -711,11 +989,42 @@ def load_config(config_file: Optional[str] = None) -> ApplicationConfig:
     return default_config_manager.load_config(config_file)
 
 
-def update_config(updates: Dict[str, Any], validate: bool = True):
+def update_config(updates: Dict[str, Any], validate: bool = True, user: Optional[str] = None):
     """Update configuration at runtime."""
-    default_config_manager.update_config(updates, validate)
+    default_config_manager.update_config(updates, validate, user=user)
 
 
-def watch_config_changes(callback: callable):
-    """Register callback for configuration changes."""
-    default_config_manager.watch_config_changes(callback)
+def get_config_backups() -> List[ConfigBackup]:
+    """Get list of configuration backups."""
+    return default_config_manager.get_backup_list()
+
+
+def restore_config_from_backup(backup: Union[ConfigBackup, str]) -> ApplicationConfig:
+    """Restore configuration from backup."""
+    return default_config_manager.restore_from_backup(backup)
+
+
+def watch_config_changes(callback: Callable, change_types: Optional[List[str]] = None):
+    """Watch for configuration changes."""
+    default_config_manager.watch_config_changes(callback, change_types)
+
+
+def set_config_schema(schema: Dict[str, Any]):
+    """Set configuration validation schema."""
+    default_config_manager.set_config_schema(schema)
+
+
+def get_config_history(limit: int = 50) -> List[ConfigChangeEvent]:
+    """Get configuration change history."""
+    return default_config_manager.get_config_history(limit)
+
+
+def enable_hot_reload(enable: bool = True):
+    """Enable or disable hot reload functionality."""
+    default_config_manager.enable_hot_reload = enable and WATCHDOG_AVAILABLE
+    if enable and not WATCHDOG_AVAILABLE:
+        logger.warning("Hot reload requested but watchdog not available")
+
+
+# For backward compatibility
+ConfigManager = EnhancedConfigManager
