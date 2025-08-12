@@ -19,12 +19,20 @@ from .models.fusion.multimodal_fusion import (
 
 from .models.projection.projection_neurons import (
     ProjectionNeuronLayer,
-    ProjectionNeuronNetwork
+    ProjectionNeuronNetwork,
+    ProjectionNeuronConfig
 )
 
 from .models.kenyon.kenyon_cells import (
     KenyonCellLayer,
-    AdaptiveKenyonCells
+    AdaptiveKenyonCells,
+    KenyonCellConfig
+)
+
+from .models.mushroom_body.decision_layer import (
+    DecisionLayer,
+    AdaptiveDecisionLayer,
+    MushroomBodyOutputNeuron
 )
 
 from .core.neurons.lif import (
@@ -92,39 +100,46 @@ class OlfactoryFusionSNN:
     def _build_network(self):
         """Build the complete network architecture."""
         # Projection neuron layer (olfactory receptor neurons)
-        self.projection_layer = ProjectionNeuronLayer(
-            num_sensors=self.num_chemical_sensors,
+        pn_config = ProjectionNeuronConfig(
+            num_receptors=self.num_chemical_sensors,
             num_projection_neurons=self.num_projection_neurons,
             tau_membrane=self.tau_membrane
         )
+        self.projection_layer = ProjectionNeuronLayer(pn_config)
         
         # Kenyon cell layer (sparse coding)
-        self.kenyon_layer = KenyonCellLayer(
-            num_projection_neurons=self.num_projection_neurons,
+        kc_config = KenyonCellConfig(
+            num_projection_inputs=self.num_projection_neurons,
             num_kenyon_cells=self.num_kenyon_cells,
-            sparsity_level=0.05
+            sparsity_target=0.05,
+            tau_membrane=self.tau_membrane * 1.5  # Slower dynamics
         )
+        self.kenyon_layer = KenyonCellLayer(kc_config)
         
         # Multi-modal fusion layer
         if self.fusion_strategy == 'early':
             self.fusion_layer = EarlyFusion(
-                num_chemical_sensors=self.num_chemical_sensors,
-                num_audio_features=self.num_audio_features
+                chemical_dim=self.num_chemical_sensors,
+                audio_dim=self.num_audio_features,
+                output_dim=self.num_chemical_sensors + self.num_audio_features
             )
         elif self.fusion_strategy == 'attention':
             self.fusion_layer = AttentionFusion(
-                num_chemical_sensors=self.num_chemical_sensors,
-                num_audio_features=self.num_audio_features
+                chemical_dim=self.num_chemical_sensors,
+                audio_dim=self.num_audio_features,
+                embed_dim=128
             )
         elif self.fusion_strategy == 'hierarchical':
             self.fusion_layer = HierarchicalFusion(
-                num_chemical_sensors=self.num_chemical_sensors,
-                num_audio_features=self.num_audio_features
+                chemical_dim=self.num_chemical_sensors,
+                audio_dim=self.num_audio_features,
+                hidden_dims=[64, 32]
             )
         elif self.fusion_strategy == 'spiking':
             self.fusion_layer = SpikingFusion(
-                num_chemical_inputs=self.num_chemical_sensors,
-                num_audio_inputs=self.num_audio_features
+                chemical_dim=self.num_chemical_sensors,
+                audio_dim=self.num_audio_features,
+                tau_membrane=self.tau_membrane
             )
         else:
             raise ValueError(f"Unknown fusion strategy: {self.fusion_strategy}")
@@ -225,6 +240,9 @@ __all__ = [
     'ProjectionNeuronNetwork',
     'KenyonCellLayer',
     'AdaptiveKenyonCells',
+    'DecisionLayer',
+    'AdaptiveDecisionLayer',
+    'MushroomBodyOutputNeuron',
     
     # Encoding
     'RateEncoder',

@@ -2,10 +2,14 @@
 
 from .projection_neurons import (
     ProjectionNeuronLayer,
-    ProjectionNeuronNetwork
+    ProjectionNeuronNetwork,
+    ProjectionNeuronConfig,
+    create_standard_projection_network
 )
 
 __all__ = [
     'ProjectionNeuronLayer',
-    'ProjectionNeuronNetwork'
+    'ProjectionNeuronNetwork',
+    'ProjectionNeuronConfig',
+    'create_standard_projection_network'
 ]

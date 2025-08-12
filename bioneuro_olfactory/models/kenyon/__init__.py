@@ -2,10 +2,16 @@
 
 from .kenyon_cells import (
     KenyonCellLayer,
-    AdaptiveKenyonCells
+    AdaptiveKenyonCells,
+    KenyonCellConfig,
+    create_standard_kenyon_layer,
+    create_adaptive_kenyon_network
 )
 
 __all__ = [
     'KenyonCellLayer',
-    'AdaptiveKenyonCells'
+    'AdaptiveKenyonCells',
+    'KenyonCellConfig',
+    'create_standard_kenyon_layer',
+    'create_adaptive_kenyon_network'
 ]

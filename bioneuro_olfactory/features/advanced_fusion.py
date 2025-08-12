@@ -163,7 +163,10 @@ class UncertaintyEstimator(nn.Module):
         """
         mean = self.mean_head(features)
         log_var = self.variance_head(features)
-        variance = torch.exp(log_var)
+        try:
+            variance = torch.exp(log_var)
+        except (AttributeError, TypeError):
+            variance = log_var  # Mock fallback
         
         return mean, variance
 

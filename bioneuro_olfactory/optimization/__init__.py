@@ -50,6 +50,70 @@ from .enhanced_monitoring import (
     monitor_performance
 )
 
+# Generation 3 Neuromorphic-Specific Scaling Features
+from .neuromorphic_cache import (
+    NeuromorphicCache,
+    WeightMatrixCache,
+    CacheType,
+    SpikePattern,
+    get_neuromorphic_cache,
+    get_weight_cache,
+    cache_neuromorphic_computation
+)
+
+from .sensor_connection_pool import (
+    SensorConnectionPool,
+    SensorConnection,
+    ConnectionConfig,
+    ConnectionType,
+    SensorDataType,
+    SensorReading,
+    AdaptiveBuffer,
+    get_sensor_pool,
+    sensor_pool_context
+)
+
+from .spike_io import (
+    MappedSpikeFile,
+    SpikeDatasetManager,
+    CompressionType,
+    SpikeDataFormat,
+    SpikeDataCompressor,
+    get_spike_dataset_manager
+)
+
+from .vectorized_ops import (
+    VectorizedLIFNeurons,
+    VectorizedSynapses,
+    VectorizedNeuromorphicProcessor,
+    OptimizationLevel,
+    AdaptiveOptimizer,
+    get_vectorized_processor,
+    vectorized_lif_update,
+    vectorized_spike_encoding
+)
+
+from .gpu_acceleration import (
+    GPUAcceleratedNeurons,
+    GPUAcceleratedSynapses,
+    MultiGPUNeuromorphicNetwork,
+    GPUResourceManager,
+    GPUFallbackManager,
+    PrecisionMode,
+    get_gpu_manager,
+    get_fallback_manager,
+    create_gpu_accelerated_network,
+    gpu_memory_summary
+)
+
+from .spike_pipeline import (
+    ConcurrentSpikeProcessor,
+    SpikeTask,
+    Priority,
+    PipelineStage,
+    get_spike_processor
+)
+
 # Existing optimization systems
 from .performance_optimizer import (
     PerformanceOptimizer,
@@ -111,6 +175,53 @@ __all__ = [
     'monitoring_context',
     'record_metric',
     'monitor_performance',
+    
+    # Generation 3 Neuromorphic Scaling Features
+    'NeuromorphicCache',
+    'WeightMatrixCache',
+    'CacheType',
+    'SpikePattern',
+    'get_neuromorphic_cache',
+    'get_weight_cache',
+    'cache_neuromorphic_computation',
+    'SensorConnectionPool',
+    'SensorConnection',
+    'ConnectionConfig',
+    'ConnectionType',
+    'SensorDataType',
+    'SensorReading',
+    'AdaptiveBuffer',
+    'get_sensor_pool',
+    'sensor_pool_context',
+    'MappedSpikeFile',
+    'SpikeDatasetManager',
+    'CompressionType',
+    'SpikeDataFormat',
+    'SpikeDataCompressor',
+    'get_spike_dataset_manager',
+    'VectorizedLIFNeurons',
+    'VectorizedSynapses',
+    'VectorizedNeuromorphicProcessor',
+    'OptimizationLevel',
+    'AdaptiveOptimizer',
+    'get_vectorized_processor',
+    'vectorized_lif_update',
+    'vectorized_spike_encoding',
+    'GPUAcceleratedNeurons',
+    'GPUAcceleratedSynapses',
+    'MultiGPUNeuromorphicNetwork',
+    'GPUResourceManager',
+    'GPUFallbackManager',
+    'PrecisionMode',
+    'get_gpu_manager',
+    'get_fallback_manager',
+    'create_gpu_accelerated_network',
+    'gpu_memory_summary',
+    'ConcurrentSpikeProcessor',
+    'SpikeTask',
+    'Priority',
+    'PipelineStage',
+    'get_spike_processor',
     
     # Existing optimization
     'PerformanceOptimizer',
