@@ -5,7 +5,10 @@ from .multimodal_fusion import (
     AttentionFusion,
     HierarchicalFusion,
     SpikingFusion,
-    TemporalAligner
+    TemporalAligner,
+    OlfactoryFusionSNN,
+    FusionConfig,
+    create_standard_fusion_network
 )
 
 __all__ = [
@@ -13,5 +16,8 @@ __all__ = [
     'AttentionFusion', 
     'HierarchicalFusion',
     'SpikingFusion',
-    'TemporalAligner'
+    'TemporalAligner',
+    'OlfactoryFusionSNN',
+    'FusionConfig',
+    'create_standard_fusion_network'
 ]
