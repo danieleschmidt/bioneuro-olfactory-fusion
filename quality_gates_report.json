@@ -44,7 +44,7 @@
         [
           "Audio Processing Throughput",
           true,
-          "3244.3 signals/sec"
+          "3145.1 signals/sec"
         ],
         [
           "Memory Efficiency",
@@ -116,7 +116,7 @@
         [
           "Documentation Coverage",
           true,
-          "75.1%"
+          "75.6%"
         ],
         [
           "Code Organization",
@@ -126,7 +126,7 @@
         [
           "Project Size",
           true,
-          "141 Python files"
+          "137 Python files"
         ],
         [
           "Module Structure",
@@ -141,10 +141,10 @@
       ],
       "summary": "5/5 quality metrics passed",
       "stats": {
-        "total_files": 141,
-        "total_lines": 58287,
-        "total_functions": 2366,
-        "documented_functions": 1777
+        "total_files": 137,
+        "total_lines": 56882,
+        "total_functions": 2296,
+        "documented_functions": 1736
       }
     },
     "Documentation": {
@@ -215,5 +215,5 @@
     }
   },
   "failed_gates": [],
-  "timestamp": 1755260714.8649337
+  "timestamp": 1755372437.6533985
 }
