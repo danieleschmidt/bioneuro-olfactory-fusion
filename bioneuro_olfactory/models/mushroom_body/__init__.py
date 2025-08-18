@@ -5,7 +5,16 @@ from .decision_layer import (
     AdaptiveDecisionLayer,
     MushroomBodyOutputNeuron,
     DecisionLayerConfig,
-    create_standard_decision_layer
+    AttentionMechanism,
+    ContextIntegration,
+    ConfidenceEstimator,
+    UncertaintyEstimator,
+    MetaLearningModule,
+    PerformanceTracker,
+    create_standard_decision_layer,
+    create_adaptive_decision_layer,
+    analyze_decision_dynamics,
+    optimize_decision_parameters
 )
 
 __all__ = [
@@ -13,5 +22,14 @@ __all__ = [
     'AdaptiveDecisionLayer', 
     'MushroomBodyOutputNeuron',
     'DecisionLayerConfig',
-    'create_standard_decision_layer'
+    'AttentionMechanism',
+    'ContextIntegration',
+    'ConfidenceEstimator',
+    'UncertaintyEstimator',
+    'MetaLearningModule',
+    'PerformanceTracker',
+    'create_standard_decision_layer',
+    'create_adaptive_decision_layer',
+    'analyze_decision_dynamics',
+    'optimize_decision_parameters'
 ]
