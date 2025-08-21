@@ -1,104 +1,85 @@
+"""BioNeuro-Olfactory models package.
+
+This package contains all the neural network models for the bioneuro-olfactory system
+including fusion models, projection neurons, Kenyon cells, and decision layers.
 """
-Model components for neuromorphic gas detection.
 
-This module provides access to the core model components with
-graceful handling of missing dependencies.
-"""
+# Import fusion models
+from .fusion import (
+    EarlyFusion,
+    AttentionFusion,
+    HierarchicalFusion,
+    SpikingFusion,
+    TemporalAligner,
+    OlfactoryFusionSNN,
+    FusionConfig,
+    create_standard_fusion_network
+)
 
-# Import basic models that don't require torch
-try:
-    from .projection import (
-        ProjectionNeuronConfig
-    )
-except ImportError:
-    # Create minimal placeholder classes
-    class ProjectionNeuronConfig:
-        def __init__(self, *args, **kwargs):
-            pass
+# Import projection neuron models
+from .projection import (
+    ProjectionNeuronLayer,
+    ProjectionNeuronNetwork,
+    ProjectionNeuronConfig,
+    AdaptiveProjectionLayer,
+    create_moth_inspired_projection_network,
+    create_standard_projection_network
+)
 
-try:
-    from .kenyon import (
-        KenyonCellConfig
-    )
-except ImportError:
-    class KenyonCellConfig:
-        def __init__(self, *args, **kwargs):
-            pass
+# Import Kenyon cell models
+from .kenyon import (
+    KenyonCellLayer,
+    AdaptiveKenyonCells,
+    CompetitiveKenyonLayer,
+    KenyonCellConfig,
+    create_moth_kenyon_layer,
+    create_efficient_kenyon_layer
+)
 
-try:
-    from .mushroom_body import (
-        DecisionConfig,
-        GasType,
-        DetectionResult
-    )
-except ImportError:
-    from enum import Enum
-    
-    class GasType(Enum):
-        CLEAN_AIR = 0
-        METHANE = 1
-        CARBON_MONOXIDE = 2
-        AMMONIA = 3
-        PROPANE = 4
-        
-    class DetectionResult:
-        def __init__(self, gas_type, concentration, confidence, hazard_probability, response_time, network_activity):
-            self.gas_type = gas_type
-            self.concentration = concentration
-            self.confidence = confidence
-            self.hazard_probability = hazard_probability
-            self.response_time = response_time
-            self.network_activity = network_activity
-            
-    class DecisionConfig:
-        def __init__(self, *args, **kwargs):
-            pass
-
-try:
-    from .fusion import (
-        FusionConfig,
-        EarlyFusion,
-        AttentionFusion,
-        HierarchicalFusion,
-        SpikingFusion,
-        TemporalAligner
-    )
-except ImportError:
-    # Create placeholder fusion classes
-    class FusionConfig:
-        def __init__(self, *args, **kwargs):
-            pass
-            
-    class EarlyFusion:
-        def __init__(self, *args, **kwargs):
-            pass
-            
-    class AttentionFusion:
-        def __init__(self, *args, **kwargs):
-            pass
-            
-    class HierarchicalFusion:
-        def __init__(self, *args, **kwargs):
-            pass
-            
-    class SpikingFusion:
-        def __init__(self, *args, **kwargs):
-            pass
-            
-    class TemporalAligner:
-        def __init__(self, *args, **kwargs):
-            pass
+# Import mushroom body models
+from .mushroom_body import (
+    DecisionLayer,
+    AdaptiveDecisionLayer,
+    EnsembleDecisionLayer,
+    MushroomBodyOutputNeuron,
+    DecisionLayerConfig,
+    create_standard_decision_layer,
+    create_adaptive_decision_layer
+)
 
 __all__ = [
-    'ProjectionNeuronConfig',
-    'KenyonCellConfig', 
-    'DecisionConfig',
-    'GasType',
-    'DetectionResult',
-    'FusionConfig',
+    # Fusion models
     'EarlyFusion',
     'AttentionFusion',
     'HierarchicalFusion',
     'SpikingFusion',
-    'TemporalAligner'
+    'TemporalAligner',
+    'OlfactoryFusionSNN',
+    'FusionConfig',
+    'create_standard_fusion_network',
+    
+    # Projection models
+    'ProjectionNeuronLayer',
+    'ProjectionNeuronNetwork',
+    'ProjectionNeuronConfig',
+    'AdaptiveProjectionLayer',
+    'create_moth_inspired_projection_network',
+    'create_standard_projection_network',
+    
+    # Kenyon models
+    'KenyonCellLayer',
+    'AdaptiveKenyonCells',
+    'CompetitiveKenyonLayer',
+    'KenyonCellConfig',
+    'create_moth_kenyon_layer',
+    'create_efficient_kenyon_layer',
+    
+    # Mushroom body models
+    'DecisionLayer',
+    'AdaptiveDecisionLayer',
+    'EnsembleDecisionLayer',
+    'MushroomBodyOutputNeuron',
+    'DecisionLayerConfig',
+    'create_standard_decision_layer',
+    'create_adaptive_decision_layer'
 ]
