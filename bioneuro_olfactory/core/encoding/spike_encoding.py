@@ -40,7 +40,11 @@ except ImportError:
             return False
     torch = MockTorch()
     nn = torch.nn
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    from ..mock_torch import get_mock_numpy
+    np = get_mock_numpy()
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 

@@ -1,21 +1,21 @@
-"""Kenyon cell models for sparse coding in mushroom body."""
+"""Kenyon cell models for sparse coding in the mushroom body."""
 
 from .kenyon_cells import (
     KenyonCellLayer,
     AdaptiveKenyonCells,
-    CompetitiveKenyonLayer,
-    SparseKenyonNeuron,
     KenyonCellConfig,
-    create_moth_kenyon_layer,
-    create_efficient_kenyon_layer
+    CompetitiveKenyonNetwork,
+    HierarchicalKenyonCells,
+    create_sparse_kenyon_network,
+    create_efficient_kenyon_network
 )
 
 __all__ = [
     'KenyonCellLayer',
     'AdaptiveKenyonCells',
-    'CompetitiveKenyonLayer',
-    'SparseKenyonNeuron',
     'KenyonCellConfig',
-    'create_moth_kenyon_layer',
-    'create_efficient_kenyon_layer'
+    'CompetitiveKenyonNetwork',
+    'HierarchicalKenyonCells',
+    'create_sparse_kenyon_network',
+    'create_efficient_kenyon_network'
 ]

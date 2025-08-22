@@ -21,30 +21,31 @@ from .projection import (
     ProjectionNeuronLayer,
     ProjectionNeuronNetwork,
     ProjectionNeuronConfig,
-    AdaptiveProjectionLayer,
-    create_moth_inspired_projection_network,
-    create_standard_projection_network
+    AdaptiveProjectionNeurons,
+    create_moth_projection_network,
+    create_efficient_projection_network
 )
 
 # Import Kenyon cell models
 from .kenyon import (
     KenyonCellLayer,
     AdaptiveKenyonCells,
-    CompetitiveKenyonLayer,
     KenyonCellConfig,
-    create_moth_kenyon_layer,
-    create_efficient_kenyon_layer
+    CompetitiveKenyonNetwork,
+    HierarchicalKenyonCells,
+    create_sparse_kenyon_network,
+    create_efficient_kenyon_network
 )
 
 # Import mushroom body models
 from .mushroom_body import (
     DecisionLayer,
     AdaptiveDecisionLayer,
-    EnsembleDecisionLayer,
     MushroomBodyOutputNeuron,
     DecisionLayerConfig,
-    create_standard_decision_layer,
-    create_adaptive_decision_layer
+    EnsembleDecisionLayer,
+    create_moth_decision_layer,
+    create_efficient_decision_layer
 )
 
 __all__ = [
@@ -62,24 +63,25 @@ __all__ = [
     'ProjectionNeuronLayer',
     'ProjectionNeuronNetwork',
     'ProjectionNeuronConfig',
-    'AdaptiveProjectionLayer',
-    'create_moth_inspired_projection_network',
-    'create_standard_projection_network',
+    'AdaptiveProjectionNeurons',
+    'create_moth_projection_network',
+    'create_efficient_projection_network',
     
     # Kenyon models
     'KenyonCellLayer',
     'AdaptiveKenyonCells',
-    'CompetitiveKenyonLayer',
     'KenyonCellConfig',
-    'create_moth_kenyon_layer',
-    'create_efficient_kenyon_layer',
+    'CompetitiveKenyonNetwork',
+    'HierarchicalKenyonCells',
+    'create_sparse_kenyon_network',
+    'create_efficient_kenyon_network',
     
     # Mushroom body models
     'DecisionLayer',
     'AdaptiveDecisionLayer',
-    'EnsembleDecisionLayer',
     'MushroomBodyOutputNeuron',
     'DecisionLayerConfig',
-    'create_standard_decision_layer',
-    'create_adaptive_decision_layer'
+    'EnsembleDecisionLayer',
+    'create_moth_decision_layer',
+    'create_efficient_decision_layer'
 ]
