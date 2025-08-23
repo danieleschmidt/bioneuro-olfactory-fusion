@@ -1,105 +1,61 @@
-"""Enhanced structured logging system with rotation and performance metrics."""
+"""Enhanced logging and monitoring system for BioNeuro-Olfactory-Fusion."""
 
 import logging
-import logging.handlers
 import json
-import sys
 import time
 import threading
-from typing import Dict, Any, Optional, List, Union, Callable
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-import queue
-import os
-import gzip
-import shutil
 from collections import defaultdict, deque
-import traceback
-import inspect
-import uuid
-from contextlib import contextmanager
-import psutil
-import socket
-
-# Try to import colored logging if available
-try:
-    import colorlog
-    COLORLOG_AVAILABLE = True
-except ImportError:
-    COLORLOG_AVAILABLE = False
+from dataclasses import dataclass, field
+from enum import Enum
+import sys
+from pathlib import Path
 
 
 class LogLevel(Enum):
-    """Extended log levels for the BioNeuro system."""
-    TRACE = 5
-    DEBUG = 10
-    INFO = 20
-    WARNING = 30
-    ERROR = 40
-    CRITICAL = 50
-    SECURITY = 55  # Custom level for security events
-    AUDIT = 60     # Custom level for audit events
-
-
-class LogFormat(Enum):
-    """Supported log formats."""
-    JSON = "json"
-    TEXT = "text"
-    COLORED = "colored"
-    STRUCTURED = "structured"
+    """Enhanced log levels."""
+    TRACE = "TRACE"
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+    SECURITY = "SECURITY"
+    PERFORMANCE = "PERFORMANCE"
 
 
 @dataclass
-class LogMetrics:
-    """Log metrics and statistics."""
-    total_logs: int = 0
-    logs_by_level: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    logs_by_module: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    error_count: int = 0
-    warning_count: int = 0
-    average_log_size: float = 0.0
-    logs_per_second: float = 0.0
-    last_reset: datetime = field(default_factory=datetime.now)
+class LogEntry:
+    """Structured log entry."""
+    timestamp: datetime
+    level: LogLevel
+    logger_name: str
+    message: str
+    module: str
+    function: str
+    line_number: int
+    thread_id: int
+    process_id: int
+    structured_data: Dict[str, Any] = field(default_factory=dict)
+    tags: List[str] = field(default_factory=list)
+    correlation_id: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            "total_logs": self.total_logs,
-            "logs_by_level": dict(self.logs_by_level),
-            "logs_by_module": dict(self.logs_by_module),
-            "error_count": self.error_count,
-            "warning_count": self.warning_count,
-            "average_log_size": self.average_log_size,
-            "logs_per_second": self.logs_per_second,
-            "last_reset": self.last_reset.isoformat()
-        }
-
-
-@dataclass
-class ContextData:
-    """Context data for structured logging."""
-    trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: Optional[str] = None
-    session_id: Optional[str] = None
-    request_id: Optional[str] = None
-    operation: Optional[str] = None
-    component: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
-    custom_fields: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for logging."""
-        return {
-            "trace_id": self.trace_id,
-            "user_id": self.user_id,
-            "session_id": self.session_id,
-            "request_id": self.request_id,
-            "operation": self.operation,
-            "component": self.component,
+            "timestamp": self.timestamp.isoformat(),
+            "level": self.level.value,
+            "logger": self.logger_name,
+            "message": self.message,
+            "module": self.module,
+            "function": self.function,
+            "line": self.line_number,
+            "thread": self.thread_id,
+            "process": self.process_id,
+            "data": self.structured_data,
             "tags": self.tags,
-            **self.custom_fields
+            "correlation_id": self.correlation_id
         }
 
 
