@@ -1,1 +1,1 @@
-"""Test package for bioneuro-olfactory-fusion."""
+# tests package
