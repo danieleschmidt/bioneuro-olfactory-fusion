@@ -9,7 +9,7 @@ description = "Bio-inspired multi-modal gas detection with SNN + CNN fusion"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "numpy>=1.24",
+    "numpy>=2.0.2",
 ]
 
 [project.optional-dependencies]
